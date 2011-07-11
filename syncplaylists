@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+
+import sys
+sys.path.append("/home/rudd-o/Projects/Mine/musictoolbox/lib")
+import musictoolbox
+import logging
+
+if "-v" in sys.argv:
+	logging.basicConfig(level=logging.DEBUG)
+	sys.argv.remove("-v")
+else:
+	logging.basicConfig(level=logging.INFO)
+
+args = sys.argv[1:]
+assert len(args) > 1
+musictoolbox.sync_playlists(args[:-1],args[-1])

@@ -1,0 +1,10 @@
+#!/usr/bin/python
+
+import sys
+sys.path.insert(0,"/home/rudd-o/Projects/Mine/musictoolbox/lib")
+import musictoolbox
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+args = sys.argv[1:]
+musictoolbox.viewmp3norm(args)

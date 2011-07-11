@@ -1,0 +1,11 @@
+#!/usr/bin/env python
+
+import mutagen
+import sys
+
+for f in sys.argv[1:]:
+	x = mutagen.File(f)
+	unwanted = [ k for k in x.keys() if 'musicbrainz' in k.lower() ]
+	for a in unwanted: del x[a]
+	x.save()
+
