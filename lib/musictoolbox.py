@@ -797,7 +797,8 @@ def relativize(listoffiles,commonprefix=None):
 def vfatprotect(f):
 	f = f.replace("./","/")
 	for illegal in '?<>\:*|"^': f = f.replace(illegal,"_")
-	while "./" in f: f = f.replace("./","/")
+        while "./" in f: f = f.replace("./","/")
+        while " /" in f: f = f.replace(" /","/")
 	return f
 
 def rsync(src,dst):
