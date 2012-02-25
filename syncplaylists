@@ -6,11 +6,16 @@ import musictoolbox
 import logging
 
 if "-v" in sys.argv:
-	logging.basicConfig(level=logging.DEBUG)
-	sys.argv.remove("-v")
+        logging.basicConfig(level=logging.DEBUG)
+        sys.argv.remove("-v")
 else:
-	logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO)
+if "-n" in sys.argv:
+        dryrun = True
+        sys.argv.remove("-n")
+else:
+        dryrun = False
 
 args = sys.argv[1:]
 assert len(args) > 1
-musictoolbox.sync_playlists(args[:-1],args[-1])
+musictoolbox.sync_playlists(args[:-1],args[-1],dryrun=dryrun)

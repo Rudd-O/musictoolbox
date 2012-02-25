@@ -42,6 +42,15 @@ def fixopen(*args,**kwargs):
 	if filename.lower().endswith(".flac"): return mutagen.flac.Open(*args,**kwargs)
 	else:						  return mutagen.File(*args,**kwargs)
 
+def command_available(cmd):
+    try: subprocess.call([cmd],stdout=file(os.devnull),stderr=file(os.devnull))
+    except OSError, e:
+        if e.errno == 2: return False
+        raise
+    except subprocess.CalledProcessError, e:
+        if e.returncode == 127: return False
+    return True
+
 # ======= mp3gain and soundcheck operations ==========
 
 def transform_keys(f,d):
@@ -107,6 +116,33 @@ def viewmp3norm(files):
 					if tag.desc.lower() in [ x[0] for x in REPLAYGAIN_TAGS ]:
 						print "%30s"%key,"  ",repr(tag)
 				except AttributeError: continue
+
+
+def viewtags(files):
+	while files:
+		file = files.pop(0)
+
+		print 
+		print file
+
+		try: tags = ID3(file)
+		except Exception,e:
+			print "No ID3 tags",e
+			tags = None
+		try: apetags = APEv2(file)
+		except Exception,e:
+			print "No APE tags",e
+			apetags = None
+
+		if apetags:
+			print "===APE tags===="
+			for key,tag in apetags.items():
+				print "%30s"%key,"  ",repr(tag)
+
+		if tags:
+			print "===ID3 tags==="
+			for key,tag in tags.items():
+				print "%30s"%key,"  ",repr(tag)
 
 
 def get_mp3gain_tags(filename):
@@ -459,16 +495,28 @@ class TranscoderException(Exception): pass
 class NoDecoderException(TranscoderException): pass
 class NoEncoderException(TranscoderException): pass
 
+# this shit requires an URGENT rewrite using zope interfaces and adapters, like MP3File needs to be adapted to something FLACFile, and policies to arrange that (may need a private adapter registry then!).
+
 # decoders take the in file and the out file as parameters
-decoders = {
-	"mp3":lambda i,o: ["madplay","--no-tty-control","--output=wav:%s"%o,i],
-	"ogg":lambda i,o: ["ogg123","-d","wav","-f",o,i],
-	"flac":lambda i,o: ["flac","-d","-o",o,i],
-	"mpc":lambda i,o: ["mppdec",i,o],
-	"wav":lambda i,o: ["cp",i,o],
-	"flv":lambda i,o: ["cp",i,o],
-	"mp4":lambda i,o: ["cp",i,o],
-}
+decoders = {}
+def detect_decoders():
+    global decoders
+    if command_available("madplay"):
+        decoders["mp3"] = lambda i,o: ["madplay","--no-tty-control","--output=wav:%s"%o,i]
+    if command_available("ogg123"):
+        decoders["ogg"] = lambda i,o: ["ogg123","-d","wav","-f",o,i]
+    if command_available("flac"):
+        decoders["flac"] = lambda i,o: ["flac","-d","-o",o,i]
+    if command_available("mppdec"):
+        decoders["mpc"] = lambda i,o: ["mppdec",i,o]
+    if command_available("mplayer"):
+        decoders["mpc"] = lambda i,o: ["mplayer","-vo","null","-ao","pcm:file=%s"%o,i]
+    if command_available("mplayer"):
+        decoders['m4a'] = lambda i,o: ["mplayer","-vo","null","-ao","pcm:file=%s"%o,i]
+    decoders["wav"] = lambda i,o: ["cp",i,o]
+    decoders["flv"] = lambda i,o: ["cp",i,o]
+    decoders["mp4"] = lambda i,o: ["cp",i,o]
+detect_decoders()
 
 def decode(input,source_format):
 	"""receives a path to a file, presumed to be in a temporary directory
@@ -483,11 +531,16 @@ def decode(input,source_format):
 	return output
 
 # encoders take the in file and the out file as parameters
-encoders = {
-	"mp3":lambda i,o: "lame -q 0 --noreplaygain --nohist --vbr-new".split(" ") + [i,o],
-	"aac":lambda i,o: ["aacplusenc",i,o,"58"],
-	"mp4":lambda i,o: ["ffmpeg","-acodec","copy","-vcodec","h264","-vf","scale=800:-1","-i",i,o],
-}
+encoders = {}
+def detect_encoders():
+    global encoders
+    if command_available("lame"):
+        encoders["mp3"] = lambda i,o: "lame -q 0 --noreplaygain --nohist --vbr-new".split(" ") + [i,o]
+    if command_available("aacplusenc"):
+        encoders["aac"] = lambda i,o: ["aacplusenc",i,o,"58"]
+    if command_available("ffmpeg"):
+        encoders["mp4"] = lambda i,o: ["ffmpeg","-acodec","copy","-vcodec","h264","-vf","scale=800:-1","-i",i,o]
+detect_encoders()
 
 def encode(input,target_format):
 	"""receives a path to a file, presumed to be in a temporary directory
@@ -596,8 +649,29 @@ def transfer_tags(origin,destination,source_format,target_format):
 
 # ======= / tag transfer functions ==========
 
-def raise_if_not_transcodable(source_format,target_format):
-	if source_format not in decoders.keys(): raise NoDecoderException,source_format
+def check_transcodable(source_format,target_format):
+        """Gets a string describing the source format, and ( a string describing the
+        target format ) or ( a list describing strings of target formats ), then
+        chooses the target format that is transcodable to, based on the source
+        format, and then returns that.  Raises NoEncoderException or
+        NoDecoderException if it is not possible to transcode from the sourrce
+        format to any of the target formats."""
+    
+        global decoders
+        global encoders
+    
+        needs_transcoding = False
+        if type(target_format) in (list,tuple):
+            if source_format in target_format: needs_transcoding = False
+            else: needs_transcoding = True
+        else:
+            if source_format == target_format: needs_transcoding = False
+            else: needs_transcoding = True
+        
+        if not needs_transcoding:
+            return source_format
+            
+        if source_format not in decoders.keys(): raise NoDecoderException,source_format
 	if type(target_format) in (list,tuple):
 		if source_format in ["flv","mp4"] and "mp3" in target_format:
 			target_format = list(target_format)
@@ -624,7 +698,7 @@ def transcode(uri,target_format):
 	
 	reencode = config_reencode_same_format or "mp4" == target_format # HACK FIXME
 
-	raise_if_not_transcodable(source_format,target_format)
+	check_transcodable(source_format,target_format)
 	
 	tempfiles = []
 	def delete_later(path):
@@ -676,7 +750,10 @@ def transcode(uri,target_format):
 def transcode_file(src,dst):
 	debug("Transcoding %r to %r",src,dst)
 	dstdir = os.path.dirname(dst)
-	if not os.path.isdir(dstdir): os.makedirs(dstdir)
+	if not os.path.isdir(dstdir):
+		try: os.makedirs(dstdir)
+		except OSError,e:
+			if e.errno != 17: raise
 	destformat = os.path.splitext(dst)[1][1:]
 	newsong = transcode(urllib.pathname2url(src),destformat)
 	rsync(newsong,dst)
@@ -726,12 +803,18 @@ def vfatprotect(f):
 def rsync(src,dst):
 	debug("Rsyncing %r to %r",src,dst)
 	dstdir = os.path.dirname(dst)
-	if not os.path.isdir(dstdir): os.makedirs(dstdir)
+	if not os.path.isdir(dstdir):
+		try: os.makedirs(dstdir)
+		except OSError,e:
+			if e.errno != 17: raise
 	return subprocess.check_call(['rsync','--modify-window=5','-t',src,dst])
 
 def transfer(src,dst):
 	dr = os.path.dirname(dst)
-	if not os.path.isdir(dr): os.makedirs(dr)
+	if not os.path.isdir(dr):
+		try: os.makedirs(dr)
+		except OSError,e:
+			if e.errno != 17: raise
 	try:
 		return transcode_file(src,dst)
 	except (NoDecoderException,NoEncoderException), e:
@@ -761,13 +844,15 @@ class SyncManager:
 		self.destdir = os.path.abspath(destdir)
 		self.playlistdir = os.path.join(self.destdir,"Playlists")
 		self.source_songs = {}
+		self.source_song_dates = {}
 		self.destination_songs = set()
+		self.destination_song_dates = {}
 		self.threads = []
 		self.exceptions = []
 		self.do_not_transfer = set()
 		self.playlists = []
 		
-	def source_song_found(self,path):
+	def source_song_found(self,path,date):
 		self.lock.acquire()
 		newpath = path
 		newpath = os.path.realpath(path)
@@ -776,23 +861,25 @@ class SyncManager:
 			srcfmt = os.path.splitext(newpath)[1][1:]
 			srcfmt = srcfmt.lower()
 			newpath = os.path.splitext(newpath)[0]+".mp3"
-			newformat = raise_if_not_transcodable(srcfmt,["mp3","mp4"])
+			newformat = check_transcodable(srcfmt,["mp3","mp4"])
 			newpath = os.path.splitext(newpath)[0]+"."+newformat
 		except (NoEncoderException,NoDecoderException),e:
 			warning("File %r will be transferred as is because of %r",path,e)
 		newpath = vfatprotect(newpath)
-		self.source_songs[newpath] = path
-		if newpath in self.destination_songs:
+                self.source_songs[newpath] = path
+                self.source_song_dates[newpath] = date
+		if newpath in self.destination_songs and date >= self.destination_song_dates[newpath]:
 			#info("Not transferring %r because it is already on the destination device"%newpath)
 			self.do_not_transfer.add(newpath)
 		self.lock.release()
 	
-	def destination_song_found(self,path):
+	def destination_song_found(self,path,date):
 		self.lock.acquire()
 		newpath = path
 		newpath = os.path.relpath(newpath,start=self.destdir)
 		self.destination_songs.add(newpath)
-		if newpath in self.source_songs:
+		self.destination_song_dates[newpath] = date
+		if newpath in self.source_songs and date <= self.source_song_dates:
 			#info("Not transferring %r because it is already on the destination device"%newpath)
 			self.do_not_transfer.add(newpath)
 		self.lock.release()
@@ -815,7 +902,7 @@ class SyncManager:
 					self.lock.release()
 					raise
 				try:
-					self.source_song_found(f)
+					self.source_song_found(f,os.stat(f).st_mtime)
 				except Exception,e:
 					self.lock.acquire()
 					self.exceptions.append(e)
@@ -835,7 +922,8 @@ class SyncManager:
 				if base == self.playlistdir: continue
 				for f in files:
 					try:
-						self.destination_song_found(os.path.join(base,f))
+                                                thefilename = os.path.join(base,f)
+						self.destination_song_found(thefilename,os.stat(thefilename).st_mtime)
 					except Exception,e:
 						self.lock.acquire()
 						self.exceptions.append(e)
@@ -852,12 +940,15 @@ class SyncManager:
 		if self.exceptions:
 			raise self.exceptions[0]
 
+        def manifest_transfer(self):
+                to_transfer = set(self.source_songs.keys()) - self.do_not_transfer
+                srcs_and_dests = [
+                        (self.source_songs[k],os.path.join(self.destdir,k))
+                        for k in to_transfer ]
+                return srcs_and_dests
+                
 	def transfer_missing_songs(self):
-		to_transfer = set(self.source_songs.keys()) - self.do_not_transfer
-		
-		srcs_and_dests = [ 
-			(self.source_songs[k],os.path.join(self.destdir,k))
-			for k in to_transfer ]
+		srcs_and_dests = self.manifest_transfer()
 		
 		if srcs_and_dests:
 			pool = multiprocessing.Pool(8)
@@ -917,15 +1008,18 @@ class SyncManager:
 
 
 # FIXME provide args for remove and sourcedir too
-def sync_playlists(sourceplaylists,synctodir):
+def sync_playlists(sourceplaylists,synctodir,dryrun=False):
 	remove = True
 	sm = SyncManager("/var/shared/Entertainment/Music",synctodir)
 	for s in sourceplaylists: sm.scan_source(s)
 	sm.scan_destination()
 	sm.join()
-	sm.transfer_missing_songs()
-	sm.transfer_playlists()
-	if remove:
-		sm.remove_obsolete_playlists()
-		sm.remove_obsolete_songs()
-
+        if dryrun:
+            for x,y in sm.manifest_transfer():
+                print "Would transfer %r to %r"%(x,y)
+        else:
+            sm.transfer_missing_songs()
+            sm.transfer_playlists()
+            if remove:
+                    sm.remove_obsolete_playlists()
+                    sm.remove_obsolete_songs()
