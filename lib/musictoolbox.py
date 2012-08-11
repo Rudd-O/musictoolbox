@@ -452,7 +452,9 @@ config_reencode_same_format = False
 # Choose whether track or album gain is used, or False if not.
 MP3GAIN_TRACK =	1
 MP3GAIN_ALBUM =	2
-config_apply_mp3gain = MP3GAIN_ALBUM
+# config_apply_mp3gain = MP3GAIN_ALBUM
+# mobile player now supports replaygain
+config_apply_mp3gain = False
 
 # Compute replaygain if the file has no replaygain information
 # Unfortunately, if replaygain is missing from the transcoded file
@@ -705,6 +707,7 @@ def transcode(uri,target_format):
 		tempfiles.append(path)
 		return path
 	def cleanup():
+		print "Deleting the following files: %r"%tempfiles
 		map(os.unlink,tempfiles)
 		while tempfiles: tempfiles.pop()
 
@@ -747,13 +750,17 @@ def transcode(uri,target_format):
 
 	return dest_path
 
+
+# this function prevents parallel makedirs from stomping on each other
+makedirlock = multiprocessing.Lock()
+def locked_makedirs(dstdir):
+	with makedirlock:
+		os.makedirs(dstdir)
+# end locked makedirs
+
+
 def transcode_file(src,dst):
 	debug("Transcoding %r to %r",src,dst)
-	dstdir = os.path.dirname(dst)
-	if not os.path.isdir(dstdir):
-		try: os.makedirs(dstdir)
-		except OSError,e:
-			if e.errno != 17: raise
 	destformat = os.path.splitext(dst)[1][1:]
 	newsong = transcode(urllib.pathname2url(src),destformat)
 	rsync(newsong,dst)
@@ -803,17 +810,12 @@ def vfatprotect(f):
 
 def rsync(src,dst):
 	debug("Rsyncing %r to %r",src,dst)
-	dstdir = os.path.dirname(dst)
-	if not os.path.isdir(dstdir):
-		try: os.makedirs(dstdir)
-		except OSError,e:
-			if e.errno != 17: raise
 	return subprocess.check_call(['rsync','--modify-window=5','-t',src,dst])
 
 def transfer(src,dst):
 	dr = os.path.dirname(dst)
 	if not os.path.isdir(dr):
-		try: os.makedirs(dr)
+		try: locked_makedirs(dr)
 		except OSError,e:
 			if e.errno != 17: raise
 	try:
