@@ -67,6 +67,8 @@ class CopyTranscoder(Transcoder):
         shutil.copyfile(source_file, destination_file)
 
 
+# FIXME: this transcoder should at LEAST detect the formats available
+# so it wont fail during sync
 class LegacyTranscoder(Transcoder):
     def would_transcode_to(self, from_):
         if from_ in "ogg flac mp3 wav mpc": return "mp3"

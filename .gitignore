@@ -1,3 +1,6 @@
 _trial_temp
 *.pyc
 *~
+dist
+build
+*.egg-info
