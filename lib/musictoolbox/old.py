@@ -566,7 +566,7 @@ def detect_encoders():
     if command_available("aacplusenc"):
         encoders["aac"] = lambda i,o: ["aacplusenc",i,o,"58"]
     if command_available("ffmpeg"):
-        encoders["mp4"] = lambda i,o: ["ffmpeg","-acodec","copy","-vcodec","h264","-vf","scale=800:-1","-i",i,o]
+        encoders["mp4"] = lambda i,o: ["ffmpeg","-i",i,"-acodec","copy","-vcodec","h264","-vf","scale=800:-1",o]
 detect_encoders()
 
 def encode(input,target_format):
