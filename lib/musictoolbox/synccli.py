@@ -30,6 +30,7 @@ from twisted.internet import reactor
 from musictoolbox.synccore import Synchronizer
 from musictoolbox.synccore import assert_deferredlist_succeeded
 from musictoolbox.transcoders import LegacyTranscoder
+import logging
 
 
 class SynchronizationCLIBackend:
@@ -194,6 +195,8 @@ def get_parser():
 
 def main(argv=None):
     '''Command line options.'''
+
+    logging.basicConfig(level=logging.WARNING)
 
     if argv is None:
         argv = sys.argv
