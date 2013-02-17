@@ -117,6 +117,31 @@ def viewmp3norm(files):
 						print "%30s"%key,"  ",repr(tag)
 				except AttributeError: continue
 
+def detect_broken_ape_tags(files):
+	while files:
+		f = files.pop(0)
+		try:
+			apetags = APEv2(f)
+		except mutagen.apev2.APENoHeaderError:
+			pass
+		except KeyError, e:
+			print f
+		except Exception, e:
+			print >> sys.stderr, "while processing %r: %s" % (f, e)
+
+
+def detect_missing_ape_tags(files):
+	while files:
+		f = files.pop(0)
+		try:
+			apetags = APEv2(f)
+		except mutagen.apev2.APENoHeaderError:
+			print f
+		except KeyError, e:
+			pass
+		except Exception, e:
+			print >> sys.stderr, "while processing %r: %s" % (f, e)
+
 
 def viewtags(files):
 	while files:
