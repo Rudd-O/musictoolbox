@@ -7,7 +7,22 @@ import argparse
 
 def sort_by_track_number(paths):
     metadatas = [ (f,mutagen.File(f)) for f in paths ]
-    relevant = [ (m["tracknumber"][0],f,m) for f,m in metadatas ]
+    relevant = []
+    relevant.extend(
+        [ (int(m["tracknumber"][0]),f,m)
+           for f,m in metadatas
+           if "tracknumber" in m ]
+    )
+    relevant.extend(
+        [ (int(m['TRCK'].text[0].split("/")[0]),f,m)
+           for f,m in metadatas
+           if "TRCK" in m ]
+    )
+    relevant.extend(
+        [ (99,f,m)
+           for f,m in metadatas
+           if f not in [ b for a,b,c in relevant] ]
+    )
     relevant = list(sorted(relevant))
     return [ f for x,f,w in relevant ]
 
