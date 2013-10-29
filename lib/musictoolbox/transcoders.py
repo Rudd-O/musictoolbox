@@ -128,7 +128,7 @@ class AudioToMp3Transcoder(Transcoder):
     '''Transcodes from any audio format to MP3.'''
 
     def would_transcode_to(self, from_):
-        if from_ in ["ogg", "aac", "m4a", "wav", "flac"]:
+        if from_ in ["ogg", "aac", "m4a", "wav", "flac", "mpc"]:
             return "mp3"
         raise CannotTranscode(from_)
 
