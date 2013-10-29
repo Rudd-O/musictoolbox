@@ -107,10 +107,10 @@ class SynchronizationCLIBackend:
         for s, t in errors.items():
             print "Not transferring: %r\nBecause: %r\n" % (s, t)
 
-    def synchronize(self):
+    def synchronize(self, concurrency=1):
         if self.verbose:
             print >> sys.stderr, "Synchronizing"
-        sync_tasks = self.synchronizer.synchronize()
+        sync_tasks = self.synchronizer.synchronize(concurrency=concurrency)
         for s, t in sync_tasks.items():
             t.addCallback(partial(self.sync_task_done, s))
             t.addErrback(partial(self.sync_task_failed, s))
@@ -127,7 +127,7 @@ class SynchronizationCLIBackend:
         self.synchronizer.synchronize_playlists()
 
 
-def run_sync(verbose, dryrun, destpath, playlists):
+def run_sync(verbose, dryrun, destpath, playlists, concurrency=1):
     failures = []
 
     t = the_transcoder()
@@ -149,7 +149,7 @@ def run_sync(verbose, dryrun, destpath, playlists):
             w.preview_synchronization()
             end()
         else:
-            sync = w.synchronize()
+            sync = w.synchronize(concurrency=concurrency)
             sync.addCallback(sync_finished)
 
     def sync_finished(possible_failures):
@@ -192,6 +192,7 @@ def get_parser():
     )
     parser.add_argument("-n", "--dry-run", dest="dryrun", action="store_true", help="do nothing except show what will happen [default: %(default)s]")
     parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
+    parser.add_argument("-c", "--concurrency", metavar="NUMPROCS", dest="concurrency", type=int, default=4, help="number of concurrent processes to run [default: %(default)s]")
     parser.add_argument(dest="playlists", help="paths to M3U playlists to synchronize", metavar="playlist", nargs='+')
     parser.add_argument(dest="destpath", help="destination directory", metavar="dir")
     return parser
@@ -213,6 +214,7 @@ def main(argv=None):
     failures = run_sync(verbose=args.verbose,
              dryrun=args.dryrun,
              playlists=args.playlists,
+             concurrency=args.concurrency,
              destpath=args.destpath)
 
     if failures:

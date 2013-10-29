@@ -467,7 +467,7 @@ class Synchronizer(object):
             if not os.path.exists(t):
                 os.makedirs(t)
 
-    def synchronize(self):
+    def synchronize(self, concurrency=1):
         '''
         Computes synchronization between sources and target, then
         gets ready to sync using a thread pool, dispatching tasks to it.
@@ -515,8 +515,8 @@ class Synchronizer(object):
         self.ensure_directories_exist(target_dirs)
 
         # dispatch execution of transcoders
-        self.sync_pool = ThreadPool(maxthreads=multiprocessing.cpu_count(),
-                                    minthreads=multiprocessing.cpu_count())
+        self.sync_pool = ThreadPool(maxthreads=concurrency,
+                                    minthreads=concurrency)
         self.sync_tasks = {}
         for src, dst in will_sync.items():
             self.sync_tasks[src] = \
