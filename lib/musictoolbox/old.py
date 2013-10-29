@@ -667,7 +667,11 @@ tag_transfer_functions = {
 	"mpc:mp3": lambda x,y,z,w: transfer_tags_any_mp3(x,y,mutagen.musepack.Open),
 }
 
-def transfer_tags(origin,destination,source_format,target_format):
+def transfer_tags(origin, destination, source_format=None, target_format=None):
+	if not source_format:
+		source_format = os.path.splitext(origin)[1][1:].lower()
+	if not target_format:
+		target_format = os.path.splitext(destination)[1][1:].lower()
 	m = "%s:%s"%(source_format,target_format)
 	if m in tag_transfer_functions:
 		transfer_function = tag_transfer_functions[m]
