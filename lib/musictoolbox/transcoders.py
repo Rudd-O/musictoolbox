@@ -4,6 +4,10 @@ Transcoders!
 
 import shutil
 from musictoolbox import old
+import iniparse
+from iniparse import INIConfig
+import os
+import subprocess
 
 
 class CannotTranscode(Exception):
@@ -59,17 +63,19 @@ class AbsentMindedTranscoder(Transcoder):
 
 class CopyTranscoder(Transcoder):
     '''Implementation of a transcoder that just copies files blindly.'''
+
     def would_transcode_to(self, from_):
         return from_
 
-    def transcode(self, source_file, destination_file):
+    def transcode(self, src, dst):
         '''Copy source_file into destination_file'''
-        shutil.copyfile(source_file, destination_file)
+        shutil.copyfile(src, dst)
 
 
 # FIXME: this transcoder should at LEAST detect the formats available
 # so it wont fail during sync
 class LegacyTranscoder(Transcoder):
+
     def would_transcode_to(self, from_):
         if from_ in "ogg flac mp3 wav mpc": return "mp3"
         if from_ in "mp4 flv": return "mp4"
@@ -77,3 +83,102 @@ class LegacyTranscoder(Transcoder):
 
     def transcode(self, src, dst):
         old.transcode_file(src, dst)
+
+
+class FlvMp4ToMp3Transcoder(Transcoder):
+    '''Transcodes from FLV / MP4 to MP3, avoiding retranscoding if possible.'''
+
+    def would_transcode_to(self, from_):
+        if from_ in ["flv", "mp4"]: return "mp3"
+        raise CannotTranscode(from_)
+
+    def transcode(self, src, dst):
+        '''Transcode FLV / MP4 to MP3 file'''
+        output = subprocess.check_output(
+                                        [
+                                         "ffprobe",
+                                         src
+                                         ],
+                                         stderr=subprocess.STDOUT,
+                                         )
+        if "Audio: mp3" in output:
+            subprocess.check_call(
+                [
+                 "gst-launch-1.0",
+                 "filesrc", "location=%s" % src,
+                 "!", "flvdemux",
+                 "!", "audio/mpeg",
+                 "!", "filesink", "location=%s" % dst,
+                 ]
+            )
+        else:
+            subprocess.check_call(
+                [
+                 "gst-launch-1.0",
+                 "filesrc", "location=%s" % src,
+                 "!", "decodebin",
+                 "!", "audioconvert",
+                 "!", "lamemp3enc", "encoding-engine-quality=2", "quality=0",
+                 "!", "filesink", "location=%s" % dst,
+                 ]
+            )
+
+
+class AudioToMp3Transcoder(Transcoder):
+    '''Transcodes from any audio format to MP3.'''
+
+    def would_transcode_to(self, from_):
+        if from_ in ["ogg", "aac", "m4a", "wav", "flac"]:
+            return "mp3"
+        raise CannotTranscode(from_)
+
+    def transcode(self, src, dst):
+        '''Transcode audio file to MP3 file'''
+        subprocess.check_call(
+            [
+             "gst-launch-1.0",
+             "filesrc", "location=%s" % src,
+             "!", "decodebin",
+             "!", "audioconvert",
+             "!", "lamemp3enc", "encoding-engine-quality=2", "quality=0",
+             "!", "filesink", "location=%s" % dst,
+             ]
+        )
+
+
+class ConfigurableTranscoder(Transcoder):
+    def __init__(self):
+        self.cfg = INIConfig(open(os.path.join(os.path.expanduser("~"),'.syncplaylists.ini')))
+
+    def _lookup_transcoder(self, from_):
+        to = getattr(self.cfg.transcoding, from_)
+        if isinstance(to, iniparse.config.Undefined):
+            to = getattr(self.cfg.transcoding, "*")
+        if isinstance(to, iniparse.config.Undefined):
+            raise CannotTranscode(from_)
+
+        if to == "copy":
+            return CopyTranscoder()
+
+        known_transcoders = [
+                             FlvMp4ToMp3Transcoder,
+                             AudioToMp3Transcoder,
+                             ]
+
+        for t in known_transcoders:
+            t = t()
+            try:
+                can_do = t.would_transcode_to(from_)
+            except CannotTranscode:
+                continue
+            if can_do == to:
+                break
+        return t
+
+    def would_transcode_to(self, from_):
+        return self._lookup_transcoder(from_).would_transcode_to(from_)
+
+    def transcode(self, src, dst):
+        from_ = os.path.splitext(src)[1][1:].lower()
+        transcoder = self._lookup_transcoder(from_)
+        transcoder.transcode(src, dst)
