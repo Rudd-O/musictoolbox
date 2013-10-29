@@ -29,7 +29,7 @@ from twisted.internet.defer import DeferredList
 from twisted.internet import reactor
 from musictoolbox.synccore import Synchronizer
 from musictoolbox.synccore import assert_deferredlist_succeeded
-from musictoolbox.transcoders import LegacyTranscoder
+from musictoolbox.transcoders import ConfigurableTranscoder as the_transcoder
 import logging
 
 
@@ -37,81 +37,66 @@ class SynchronizationCLIBackend:
     def __init__(self, s, verbose):
         self.synchronizer = s
         self.verbose = verbose
+        self.failures = []
 
     def scan(self):
         if self.verbose:
             print >> sys.stderr, "Starting scan"
 
-        failures = []
-        scan_done = Deferred()
-
-        d1 = self.synchronizer.parse_playlists()
-        d2 = self.synchronizer.scan_target_dir()
-        d3 = Deferred()
-        d4 = Deferred()
-
-        def on_parse_playlists_done(p):
-            if self.verbose:
-                print >> sys.stderr, \
-                    "Parsing playlists discovered %s source files" % len(p)
-            d = self.synchronizer.scan_source_files_mtimes()
-            def on_scan_source_files_mtimes_done(p):
+        def on_parse_playlists_done(count):
+            def on_scan_source_files_mtimes_done(count):
                 if self.verbose:
                     print >> sys.stderr, \
-                        "Scanning %s source files mtimes done" % len(p)
-                d3.callback(None)
-            d.addCallback(on_scan_source_files_mtimes_done)
-            def on_scan_source_files_mtimes_failed(f):
+                        "Scanning %s source files mtimes done" % len(count)
+            def on_scan_source_files_mtimes_failed(failure):
                 print >> sys.stderr, \
                     "Failed to scan source files: %s" % f.value
-                failures.append(f)
-                d3.callback(None)
-            d.addErrback(on_scan_source_files_mtimes_failed)
-        d1.addCallback(on_parse_playlists_done)
+                self.failures.append(failure)
+
+            if self.verbose:
+                print >> sys.stderr, \
+                    "Parsing playlists discovered %s source files" % len(count)
+            dm = self.synchronizer.scan_source_files_mtimes()
+            dm.addCallback(on_scan_source_files_mtimes_done)
+            dm.addErrback(on_scan_source_files_mtimes_failed)
+            return dm
 
         def on_parse_playlists_failed(f):
             print >> sys.stderr, \
                 "Parsing playlists failed: %s" % f.value
-            failures.append(f)
-            # early abort
-            d3.callback(None)
+            self.failures.append(f)
+
+        d1 = self.synchronizer.parse_playlists()
+        d1.addCallback(on_parse_playlists_done)
         d1.addErrback(on_parse_playlists_failed)
 
         def on_scan_target_dir_done(p):
-            if self.verbose:
-                print >> sys.stderr, "Scanning %s target files done" % len(p)
-            d = self.synchronizer.scan_target_dir_mtimes()
             def on_scan_target_dir_mtimes_done(p):
                 if self.verbose:
                     print >> sys.stderr, \
                         "Scanning %s target files mtimes done" % len(p)
-                d4.callback(None)
-            d.addCallback(on_scan_target_dir_mtimes_done)
             def on_scan_target_dir_mtimes_failed(f):
                 print >> sys.stderr, \
                     "Scanning target files mtimes failed: %s" % f.value
-                failures.append(f)
-                d4.callback(None)
-            d.addErrback(on_scan_target_dir_mtimes_failed)
-        d2.addCallback(on_scan_target_dir_done)
+                self.failures.append(f)
+
+            if self.verbose:
+                print >> sys.stderr, "Scanning %s target files done" % len(p)
+            dt = self.synchronizer.scan_target_dir_mtimes()
+            dt.addCallback(on_scan_target_dir_mtimes_done)
+            dt.addErrback(on_scan_target_dir_mtimes_failed)
+            return dt
 
         def on_scan_target_dir_failed(f):
             print >> sys.stderr, \
                 "Scanning target directory failed: %s" % f.value
-            failures.append(f)
-            # early abort
-            d4.callback(None)
+            self.failures.append(f)
+
+        d2 = self.synchronizer.scan_target_dir()
+        d2.addCallback(on_scan_target_dir_done)
         d2.addErrback(on_scan_target_dir_failed)
 
-        def all_steps_done(result):
-            if failures:
-                scan_done.errback(failures[0])
-            else:
-                scan_done.callback(None)
-        steps = DeferredList([d1, d2, d3, d4])
-        steps.addCallback(all_steps_done)
-
-        return scan_done
+        return DeferredList([d1, d2])
 
     def preview_synchronization(self):
         if self.verbose:
@@ -137,18 +122,29 @@ class SynchronizationCLIBackend:
     def sync_task_failed(self, src, failure):
         print >> sys.stderr, "Not synced: %r\nBecause: %s\n" % (src, failure)
 
+    def synchronize_playlists(self):
+        '''this method blocks'''
+        self.synchronizer.synchronize_playlists()
+
 
 def run_sync(verbose, dryrun, destpath, playlists):
     failures = []
 
-    t = LegacyTranscoder()
+    t = the_transcoder()
     k = Synchronizer(t)
     k.set_target_dir(destpath)
     [ k.add_playlist(p) for p in playlists ]
 
     w = SynchronizationCLIBackend(k, verbose=verbose)
 
-    def scan_finished(_):
+    def scan_finished(possible_failures):
+        failures.extend([ s[1] for s in possible_failures if not s[0] ])
+        failures.extend(w.failures)
+        if failures:
+            print >> sys.stderr, "Scan failed"
+            end()
+        elif verbose:
+            print >> sys.stderr, "Scan finished"
         if dryrun:
             w.preview_synchronization()
             end()
@@ -156,24 +152,32 @@ def run_sync(verbose, dryrun, destpath, playlists):
             sync = w.synchronize()
             sync.addCallback(sync_finished)
 
-    def scan_failed(failure):
-        failures.append(failure)
-        end()
-
-    def sync_finished(result):
-        failures.extend([s for s, _ in result if not s])
+    def sync_finished(possible_failures):
+        failures.extend([ s[1] for s in possible_failures if not s[0] ])
+        if failures:
+            print >> sys.stderr, "Sync failed"
+        elif verbose:
+            print >> sys.stderr, "Sync finished"
+        try:
+            w.synchronize_playlists()
+            if verbose:
+                print >> sys.stderr, "Playlist generation finished"
+        except Exception, e:
+            print >> sys.stderr, "Playlist generation failed"
+            failures.append(e)
         end()
 
     def end():
         reactor.stop()
 
-    scan = w.scan()
-    scan.addCallback(scan_finished)
-    scan.addErrback(scan_failed)
+    def start():
+        scan = w.scan()
+        scan.addCallback(scan_finished)
 
+    reactor.callLater(0, start)
     reactor.run()
 
-    return False if failures else True
+    return failures if failures else None
 
 # cmd line stuff
 
@@ -206,14 +210,16 @@ def main(argv=None):
     parser = get_parser()
     args = parser.parse_args()
 
-    success = run_sync(verbose=args.verbose,
+    failures = run_sync(verbose=args.verbose,
              dryrun=args.dryrun,
              playlists=args.playlists,
              destpath=args.destpath)
 
-    if success:
-        return 0
-    return 4
+    if failures:
+        for failure in failures:
+            print >> sys.stderr, failure
+        return 4
+    return 0
 
 
 if __name__ == "__main__":

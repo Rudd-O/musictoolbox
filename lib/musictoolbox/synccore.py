@@ -5,13 +5,13 @@ Created on Aug 11, 2012
 '''
 
 import os
-import glob
+import multiprocessing
 from twisted.internet import reactor, threads
-from twisted.internet.defer import Deferred
 from twisted.internet.defer import DeferredList
 from twisted.python.threadpool import ThreadPool
 from twisted.internet.threads import deferToThreadPool
 from musictoolbox.transcoders import CannotTranscode
+from musictoolbox.old import transfer_tags
 
 # ================== generic utility functions ================
 
@@ -106,7 +106,9 @@ def compute_synchronization(
     sources, sourcedir,
     targets, targetdir,
     path_mapper=lambda x: x,
-    time_comparator=lambda x, y: 1 if x > y else 0 if x == y else -1):
+    time_comparator=lambda x, y: 1 if x > y else 0 if x == y else -1,
+    unconditional=False,
+    ):
     '''
     Compute a synchronization schedule based on a dictionary of
     {source_filename:mtime} and a dictionary of {target_filename:mtime}.
@@ -137,7 +139,7 @@ def compute_synchronization(
     Return two dictionaries:
         1. a dictionary {s:t} where s is the source file name, and
            t is the desired target file name after transfer.
-        2. a dictonary {s:e} where s is the source file name, and
+        2. a dictionary {s:e} where s is the source file name, and
            e is the exception explaining why it cannot be synced
     '''
 
@@ -186,6 +188,7 @@ def compute_synchronization(
          (s, t) for t, s in dt2s_map.items()
          if t not in target_files
          or time_comparator(source_mtimes[s], target_mtimes[t]) > 0
+         or unconditional
     ])
 
     return need_to_transfer, wont_transfer
@@ -283,19 +286,7 @@ class Synchronizer(object):
             self.source_files = files
             return files
         d.addCallback(done)
-#        d.addCallback(self.on_parse_playlists_done)
         return d
-
-#    def on_parse_playlists_done(self, files):
-#        '''
-#        gets called when the playlists have successfully been parsed.
-#
-#        takes a dictionary {absolutepath:source_playlists}
-#
-#        you can subclass this class and reimplement this method for UI
-#        purposes. your reimplementation must not do blocking operations.
-#        '''
-#        pass
 
     def __generic_scan_mtimes_of_file_list(self, filenames):
         '''
@@ -339,20 +330,7 @@ class Synchronizer(object):
             self.source_files_mtimes = files_mtimes
             return files_mtimes
         d.addCallback(done)
-#        d.addCallback(self.on_scan_source_files_mtimes_done)
         return d
-
-#    def on_scan_source_files_mtimes_done(self, files_mtimes):
-#        '''
-#        gets called when the files have been successfully scanned for
-#        their modification times.
-#
-#        takes a dictionary {absolutepath:modification_time}
-#
-#        you can subclass this class and reimplement this method for UI
-#        purposes. your reimplementation must not do blocking operations.
-#        '''
-#        pass
 
     def scan_target_dir(self):
         '''
@@ -372,20 +350,7 @@ class Synchronizer(object):
             self.target_files = files
             return files
         d.addCallback(done)
-#        d.addCallback(self.on_scan_target_dir_done)
         return d
-
-#    def on_scan_target_dir_done(self, files):
-#        '''
-#        gets called when the target directory has been
-#        successfully scanned.
-#
-#        receives all found files in the target directory as a list
-#
-#        you can subclass this class and reimplement this method for UI
-#        purposes. your reimplementation must not do blocking operations.
-#        '''
-#        pass
 
     def scan_target_dir_mtimes(self):
         '''
@@ -408,21 +373,7 @@ class Synchronizer(object):
             self.target_files_mtimes = files_mtimes
             return files_mtimes
         d.addCallback(done)
-#        d.addCallback(self.on_scan_target_dir_mtimes_done)
         return d
-
-#    def on_scan_target_dir_mtimes_done(self, files_mtimes):
-#        '''
-#        gets called when all the files in the target directory have been
-#        successfully scanned for their modification times.
-#
-#        receives all found files in the target directory associated to
-#        their modification times, as a dictionary
-#
-#        you can subclass this class and reimplement this method for UI
-#        purposes. your reimplementation must not do blocking operations.
-#        '''
-#        pass
 
     def _fatmapper(self, path):
         # the mapper function needs to take FAT32 into account, and needs
@@ -453,7 +404,7 @@ class Synchronizer(object):
     def _fatcompare(self, s, t):
         return fatcompare(s, t)
 
-    def compute_synchronization(self):
+    def compute_synchronization(self, unconditional=False):
         '''Computes synchronization between sources and target.
         
         You must have already parsed the playlists, scanned the target
@@ -504,7 +455,8 @@ class Synchronizer(object):
             self.target_files_mtimes,
             self.target_dir,
             path_mapper=self._fatmapper,
-            time_comparator=self._fatcompare
+            time_comparator=self._fatcompare,
+            unconditional=unconditional,
         )
         return need_to_transfer, wont_transfer
 
@@ -533,14 +485,29 @@ class Synchronizer(object):
               if the sync is cancelled while in progress or otherwise fails,
               the errback will fire instead, receiving a failure instance.
         '''
-        assert not hasattr(self, "sync_pool")
-
         def transcode(s, d):
             # adapt the transcoder interface to return the source file
-            # because the transcoder does not return anything, really
-            self.transcoder.transcode(s, d)
+            # because the transcoder returns old and new formats
+            tempp, tempf = os.path.dirname(d), os.path.basename(d)
+            tempf = 'tmp-' + tempf
+            tempd = os.path.join(tempp, tempf)
+            try:
+                self.transcoder.transcode(s, tempd)
+                transfer_tags(s, tempd)
+            except Exception, e:
+                try:
+                    os.unlink(tempd)
+                except Exception:
+                    pass
+                raise e
+            if os.stat(tempd).st_size == 0:
+                os.unlink(tempd)
+                raise AssertionError, ("we expected the transcoded file to be "
+                                       "larger than 0 bytes")
+            os.rename(tempd, d)
             return d
 
+        # FIXME if adding params to the following call, add them below too
         will_sync, _ = self.compute_synchronization()
 
         # create the directories
@@ -548,7 +515,8 @@ class Synchronizer(object):
         self.ensure_directories_exist(target_dirs)
 
         # dispatch execution of transcoders
-        self.sync_pool = ThreadPool()
+        self.sync_pool = ThreadPool(maxthreads=multiprocessing.cpu_count(),
+                                    minthreads=multiprocessing.cpu_count())
         self.sync_tasks = {}
         for src, dst in will_sync.items():
             self.sync_tasks[src] = \
@@ -559,22 +527,66 @@ class Synchronizer(object):
                   src,
                   dst,
                 )
-        sync_done_trigger = DeferredList(self.sync_tasks.values())
         def sync_done(result):
+            self.src_to_dst_map = will_sync
             self.sync_pool.stop()
-            del self.sync_pool
-            del self.sync_tasks
-        sync_done_trigger.addCallback(sync_done)
+
         self.sync_pool.start()
+        sync_done_trigger = DeferredList(self.sync_tasks.values())
+        sync_done_trigger.addCallback(sync_done)
         return self.sync_tasks
 
-    # def abort_sync(self):
-    #    assert hasattr(self, "sync_pool")
+        # FIXME: make sure that all the deferreds heave fired with
+        # completion information
+        # and those which weren't done, fire with a Cancelled exception
+        # otherwise the DeferredList will forever be not completed
 
-        # self.sync_pool.stop()
-#        del self.sync_pool
- #       del self.sync_tasks
-  #      del self.sync_done
+    def synchronize_playlists(self):
+        '''
+        Once synchronization of files has been done, synchronization of
+        playlists is possible.
+
+        The entry conditions for this function are the same as the entry
+        conditions of synchronize().
+
+        This function blocks with impunity.
+        '''
+        # FIXME if adding params to the following call, add them above too
+        will_sync, wont_sync = self.compute_synchronization(unconditional=True)
+
+        target_playlist_dir = os.path.join(self.target_dir, "Playlists")
+        self.ensure_directories_exist([target_playlist_dir])
+
+        for p in self.playlists:
+            pdir = os.path.dirname(p)
+            pf = open(p)
+            pfl = pf.readlines()
+            newpfl = []
+            for l in pfl:
+                if not l.startswith("#"):
+                    oldl = "# was: " + l
+                    l = l.strip()
+                    truel = os.path.abspath(os.path.join(pdir, l))
+                    if truel in will_sync:
+                        l = will_sync[truel]
+                        l = os.path.relpath(l, target_playlist_dir)
+                    elif truel in wont_sync:
+                        l = "# not synced because of %s" % wont_sync[truel]
+                    elif not l:
+                        oldl = ""
+                    else:
+                        assert 0, l
+                    l = l + "\n"
+                    l = oldl + l
+                newpfl.append(l)
+            newp = os.path.join(target_playlist_dir, os.path.basename(p))
+            newpf = open(newp, "wb")
+            newpf.writelines(newpfl)
+            newpf.flush()
+            newpf.close()
+            pf.close()
+
+
         # FIXME: make sure that all the deferreds heave fired with
         # completion information
         # and those which weren't done, fire with a Cancelled exception
