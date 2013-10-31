@@ -125,20 +125,21 @@ class FlvMp4ToMp3Transcoder(Transcoder):
 
 
 class FlvMp4ToWavTranscoder(Transcoder):
-    '''Transcodes from FLV / MP4 to RIFF WAVE 16 bit.'''
+    '''Transcodes from FLV / MP4 to RIFF WAVE 32 bit float.'''
 
     def would_transcode_to(self, from_):
         if from_ in ["flv", "mp4"]: return "wav"
         raise CannotTranscode(from_)
 
     def transcode(self, src, dst):
-        '''Transcode FLV / MP4 to RIFF WAVE 16-bit file'''
+        '''Transcode FLV / MP4 to RIFF WAVE file'''
         subprocess.check_call(
             [
              "gst-launch-1.0",
              "filesrc", "location=%s" % src,
              "!", "decodebin",
              "!", "audioconvert",
+             "!", "audio/x-raw,format=F32LE",
              "!", "wavenc",
              "!", "filesink", "location=%s" % dst,
              ]
@@ -168,7 +169,7 @@ class AudioToMp3Transcoder(Transcoder):
 
 
 class AudioToWavTranscoder(Transcoder):
-    '''Transcodes from any audio format to RIFF WAVE 16 bit.'''
+    '''Transcodes from any audio format to RIFF WAVE 32 bit float.'''
 
     def would_transcode_to(self, from_):
         if from_ in ["ogg", "aac", "m4a", "mp3", "flac", "mpc"]:
@@ -183,6 +184,7 @@ class AudioToWavTranscoder(Transcoder):
              "filesrc", "location=%s" % src,
              "!", "decodebin",
              "!", "audioconvert",
+             "!", "audio/x-raw,format=F32LE",
              "!", "wavenc",
              "!", "filesink", "location=%s" % dst,
              ]
