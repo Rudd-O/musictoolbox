@@ -124,6 +124,27 @@ class FlvMp4ToMp3Transcoder(Transcoder):
             )
 
 
+class FlvMp4ToWavTranscoder(Transcoder):
+    '''Transcodes from FLV / MP4 to RIFF WAVE 16 bit.'''
+
+    def would_transcode_to(self, from_):
+        if from_ in ["flv", "mp4"]: return "wav"
+        raise CannotTranscode(from_)
+
+    def transcode(self, src, dst):
+        '''Transcode FLV / MP4 to RIFF WAVE 16-bit file'''
+        subprocess.check_call(
+            [
+             "gst-launch-1.0",
+             "filesrc", "location=%s" % src,
+             "!", "decodebin",
+             "!", "audioconvert",
+             "!", "wavenc",
+             "!", "filesink", "location=%s" % dst,
+             ]
+        )
+
+
 class AudioToMp3Transcoder(Transcoder):
     '''Transcodes from any audio format to MP3.'''
 
@@ -146,6 +167,28 @@ class AudioToMp3Transcoder(Transcoder):
         )
 
 
+class AudioToWavTranscoder(Transcoder):
+    '''Transcodes from any audio format to RIFF WAVE 16 bit.'''
+
+    def would_transcode_to(self, from_):
+        if from_ in ["ogg", "aac", "m4a", "mp3", "flac", "mpc"]:
+            return "wav"
+        raise CannotTranscode(from_)
+
+    def transcode(self, src, dst):
+        '''Transcode audio file to MP3 file'''
+        subprocess.check_call(
+            [
+             "gst-launch-1.0",
+             "filesrc", "location=%s" % src,
+             "!", "decodebin",
+             "!", "audioconvert",
+             "!", "wavenc",
+             "!", "filesink", "location=%s" % dst,
+             ]
+        )
+
+
 class ConfigurableTranscoder(Transcoder):
     def __init__(self):
         self.cfg = INIConfig(open(os.path.join(os.path.expanduser("~"),'.syncplaylists.ini')))
@@ -163,6 +206,8 @@ class ConfigurableTranscoder(Transcoder):
         known_transcoders = [
                              FlvMp4ToMp3Transcoder,
                              AudioToMp3Transcoder,
+                             FlvMp4ToWavTranscoder,
+                             AudioToWavTranscoder,
                              ]
 
         for t in known_transcoders:
