@@ -155,7 +155,7 @@ def compute_synchronization(
     source_basedir = sourcedir
     target_mtimes = targets
     target_files = target_mtimes.keys()
-    target_basedir = targetdir
+    target_basedir = os.path.abspath(targetdir)
 
     test = source_basedir + os.path.sep \
            if source_basedir[-len(os.path.sep)] != os.path.sep \
