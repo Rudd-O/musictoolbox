@@ -25,9 +25,11 @@ for fn in sys.argv[1:]:
 			else:
 				print "%r does not exist"%line
 				print "Enter new path to replace old one"
-				line = sys.stdin.readline().strip()
-				newlines.append(line)
-				replacements[fullpath] = line
+				newline = sys.stdin.readline().strip()
+				if not newline:
+					print "Skipping replacement of %r" % line
+				newlines.append(newline)
+				replacements[fullpath] = newline
 		else:
 			newlines.append(line)
 
