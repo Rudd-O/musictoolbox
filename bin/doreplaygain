@@ -3,7 +3,13 @@
 import sys
 import os
 from optparse import OptionParser
-sys.path.insert(0,"/home/rudd-o/Projects/Mine/musictoolbox/lib")
+sys.path.insert(0,
+  os.path.join(
+   os.path.dirname(__file__),
+   os.path.pardir,
+   "lib",
+  )
+)
 import musictoolbox
 import logging
 logging.basicConfig(level=logging.DEBUG)
