@@ -14,4 +14,20 @@ What's in the box
     mp3=copy
     *=mp3
 
-and you should be done.  More documentation coming'
+and you should be done.  More documentation coming.
+
+Requirements
+------------
+
+This is a non-exhaustive list of requirements for most of these utilities to work:
+
+  - python-setuptools
+  - ffmpeg
+  - python-mutagen
+  - mp3gain
+  - madplay
+  - mplayer
+  - mppenc
+  - vorbis-tools
+  - flac
+
