@@ -26,12 +26,14 @@ class SynchronizationCLIBackend:
         """Returns:
 
         0 if all transcoding / synchronization operations completed.
+        2 if scanning experienced a problem.
         4 if a transcoding / synchronization failure took place.
         8 if a problem took place while writing playlists.
         Or a combination of the above.
 
         Raises Exception in an unexpected failure took place.
         """
+        exitval = 0
         failures = self.synchronizer.scan()
         if failures:
             print >> sys.stderr, "Problems encountered during scanning:\n"
@@ -39,6 +41,7 @@ class SynchronizationCLIBackend:
                 print >> sys.stderr, \
                     "Could not scan: %r\nBecause: %r\n" % (s, t)
             print >> sys.stderr
+            exitval += 2
 
         if self.dryrun:
             ops, errors = self.synchronizer.compute_synchronization()
@@ -47,8 +50,8 @@ class SynchronizationCLIBackend:
             for s, t in errors.items():
                 print "Not transferring: %r\nBecause: %r\n" % (s, t)
             if errors:
-                return 8
-            return 0
+                exitval += 8
+            return exitval
 
         sync_tasks = self.synchronizer.synchronize(concurrency=self.concurrency)
         errors = None
@@ -60,6 +63,8 @@ class SynchronizationCLIBackend:
             else:
                 print >> sys.stderr, \
                     "Synced: %r\nTarget: %r\n" % (s, t)
+        if errors:
+            exitval += 4
 
         playlist_failures = self.synchronizer.synchronize_playlists()
         if playlist_failures:
@@ -68,12 +73,8 @@ class SynchronizationCLIBackend:
                 print >> sys.stderr, \
                     "Could not write: %r\nBecause: %r\n" % (s, t)
             print >> sys.stderr
-
-        exitval = 0
-        if errors:
-            exitval += 4
-        if playlist_failures:
             exitval += 8
+
         return exitval
 
 
