@@ -6,7 +6,8 @@ Created on Aug 11, 2012
 
 import logging
 import os
-from threading import Thread
+import signal
+from threading import Thread, Lock
 from Queue import Queue
 from musictoolbox.transcoders import CannotTranscode
 from musictoolbox.old import transfer_tags
@@ -203,6 +204,29 @@ def compute_synchronization(
 
 #===================== synchronizer code ==========================
 
+class TranscoderSlave(Thread):
+    def __init__(self, work, outqueue, makedirs, transcoder):
+        Thread.__init__(self)
+        self.work = work
+        self.outqueue = outqueue
+        self.stopped = False
+        self.makedirs = makedirs
+        self.transcoder = transcoder
+    def run(self):
+        for src, dst in self.work:
+            if self.stopped: break
+            target_dir = [os.path.dirname(dst)]
+            try:
+                self.makedirs(target_dir)
+                result = self.transcoder(src, dst)
+                self.outqueue.put((src, result))
+            except BaseException, e:
+                self.outqueue.put((src, e))
+        self.outqueue.put(None)
+    def stop(self):
+        self.stopped = True
+
+
 class Synchronizer(object):
 
     playlists = None
@@ -261,6 +285,7 @@ class Synchronizer(object):
         self.target_files = []
         self.target_files_mtimes = {}
         self.transcoder = transcoder
+        self.__dir_lock = Lock()
 
     def set_transcoder(self, transcoder):
         '''Change to a different transcoder'''
@@ -500,11 +525,12 @@ class Synchronizer(object):
         return need_to_transfer, wont_transfer
 
     def _ensure_directories_exist(self, dirs):
-        for t in dirs:
-            if not t:
-                continue
-            if not os.path.exists(t):
-                os.makedirs(t)
+        with self.__dir_lock:
+            for t in dirs:
+                if not t:
+                    continue
+                if not os.path.exists(t):
+                    os.makedirs(t)
 
     def _transcode_wrapper(self, s, d):
             # adapt the transcoder interface to return the source file
@@ -541,18 +567,35 @@ class Synchronizer(object):
         This function blocks.  As it processes files in its plan, it returns
         a tuple (source_file:destination_file or Exception).
         '''
-
-        # FIXME if adding params to the following call, add them below too
+        queue = Queue()
         will_sync, _ = self.compute_synchronization()
+        if not will_sync.items():
+            return
 
-        # dispatch execution of transcoders, creating directories as we go
-        for src, dst in will_sync.items():
-            try:
-                target_dir = [os.path.dirname(dst)]
-                self._ensure_directories_exist(target_dir)
-                yield src, self._transcode_wrapper(src, dst)
-            except Exception, e:
-                yield src, e
+        chunks = chunkify(will_sync.items(), concurrency)
+        threads = [ TranscoderSlave(chunk,
+                                    queue,
+                                    self._ensure_directories_exist,
+                                    self._transcode_wrapper)
+                    for chunk in chunks ]
+        [ t.start() for t in threads ]
+        ended = 0
+        logger.info("Synchronizing with %s threads for %s work items",
+                    len(threads), len(will_sync.items()))
+
+        try:
+            while ended < concurrency:
+                val = queue.get()
+                if val is None:
+                    ended += 1
+                    logger.info("Thread %s is done", ended)
+                else:
+                    yield val
+        finally:
+            logger.info("Stopping and joining all %s threads", len(threads))
+            [ t.stop() for t in threads ]
+            [ t.join() for t in threads ]
+            logger.info("Ended synchronization")
 
     def synchronize_playlists(self):
         '''
