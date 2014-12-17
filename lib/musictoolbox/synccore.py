@@ -4,47 +4,51 @@ Created on Aug 11, 2012
 @author: rudd-o
 '''
 
+import logging
 import os
-import multiprocessing
-from twisted.internet import reactor, threads
-from twisted.internet.defer import DeferredList
-from twisted.python.threadpool import ThreadPool
-from twisted.internet.threads import deferToThreadPool
+from threading import Thread
+from Queue import Queue
 from musictoolbox.transcoders import CannotTranscode
 from musictoolbox.old import transfer_tags
+
+logger = logging.getLogger(__name__)
 
 # ================== generic utility functions ================
 
 def parse_playlists(sources):
     '''
-    Take several playlists, and return a dictionary.
+    Take several playlists, and return a dictionary and a list.
     This dictionary is structured as follows:
     - keys: absolute path names mentioned in the playlists
     - values: playlists where the file appeared
+    The list is a sequence of (file, Exception) occurred while parsing.
     '''
     files = {}
+    excs = []
     for source in sources:
-        sourcename = source
-        if hasattr(source, "read"):
-            sourcedir = "/"
-        else:
-            sourcedir = os.path.dirname(source)
-            source = file(source)
-        thisbatch = [
-                 os.path.abspath(
-                     os.path.join(sourcedir, x.strip())
-                 )
-                 for x in source.readlines()
-                 if x.strip() and not x.strip().startswith("#")
-        ]
-        for path in thisbatch:
-            if path not in files: files[path] = []
-            files[path].append(sourcename)
-    return files
+        try:
+            sourcename = source
+            if hasattr(source, "read"):
+                sourcedir = "/"
+            else:
+                sourcedir = os.path.dirname(source)
+                source = file(source)
+            thisbatch = [
+                     os.path.abspath(
+                         os.path.join(sourcedir, x.strip())
+                     )
+                     for x in source.readlines()
+                     if x.strip() and not x.strip().startswith("#")
+            ]
+            for path in thisbatch:
+                if path not in files: files[path] = []
+                files[path].append(sourcename)
+        except Exception, e:
+            excs.append((source, e))
+    return files, excs
 
 def scan_mtimes(filelist):
-    '''Take a list of files, and return a dictionary
-    with a list of files and their modification times
+    '''Take a list of files, and yield tuples (path, mtime or Exception).
     
     The dictionary value for a particular key may contain an
     exception in lieu of an mtime.  This means that scanning
@@ -53,10 +57,11 @@ def scan_mtimes(filelist):
     def mtimeorexc(x):
         try:
             return os.stat(f).st_mtime
-        except (IOError, OSError), e:
+        except Exception, e:
             return e
 
-    return dict([ (f, mtimeorexc(f)) for f in filelist ])
+    for f in filelist:
+        yield f, mtimeorexc(f)
 
 def chunkify(longlist, nchunks):
     return [
@@ -267,47 +272,86 @@ class Synchronizer(object):
     def add_playlist(self, playlist):
         self.playlists.append(playlist)
 
+    def scan(self):
+        """Scan all files needed to compute synchronization.
+
+        Returns a list of (path, Exception)."""
+        excs = []
+
+        logger.info("Parsing %s playlists", len(self.playlists))
+        excs.extend(self.parse_playlists())
+        logger.info("Discovered %s source files",
+                    len(self.source_files))
+
+        logger.info("Scanning target directory %s", self.target_dir)
+        excs.extend(self.scan_target_dir())
+        logger.info("Discovered %s target files", len(self.target_files))
+
+        logger.info("Scanning %s source files mtimes",
+                    len(self.source_files))
+        excs.extend(self.scan_source_files_mtimes())
+        logger.info("Scanned %s source files mtimes",
+                    len(self.source_files_mtimes))
+
+        logger.info("Scanning %s target files mtimes",
+                    len(self.target_files))
+        excs.extend(self.scan_target_dir_mtimes())
+        logger.info("Scanned %s target files mtimes",
+                    len(self.target_files_mtimes))
+
+        return excs
+
     def parse_playlists(self):
         '''
         scan the playlists known to the synchronizer and obtain a list
         of files.
-        
+
         when done, update self.source_files with the files discovered
-        from the playlists. 
-        
+        from the playlists, then return exceptions that happened during
+        parsing, as a list of tuples (file, exception).
+
         It is not an error to call this method before having used
         add_playlist(), but it will produce no result.
-        
-        this operation blocks -- as such, it returns a deferred
-        '''
 
-        d = threads.deferToThread(lambda: parse_playlists(self.playlists))
-        def done(files):
-            self.source_files = files
-            return files
-        d.addCallback(done)
-        return d
+        This operation blocks.
+        '''
+        self.source_files, excs = parse_playlists(self.playlists)
+        return excs
 
     def __generic_scan_mtimes_of_file_list(self, filenames):
         '''
         scan files in file_list for their modification
         times. do the scan in parallel for maximum performance.
+        Returns dictionary {filename: mtime or Exception}.
         
-        this operation blocks -- as such, it returns a deferred
+        This operation blocks.
         '''
         chunks = chunkify(filenames, 8)
         # FIXME TODO hardcoded 8
 
-        deferreds = [
-             threads.deferToThread(scan_mtimes, c)
-             for c in chunks
-        ]
+        class MtimeScanner(Thread):
+            def __init__(self, queue, files):
+                Thread.__init__(self)
+                self.queue = queue
+                self.files = files
+            def run(self):
+                for ret in scan_mtimes(self.files):
+                    self.queue.put(ret)
+                self.queue.put(None)
 
-        d = DeferredList(deferreds)
-        d.addCallback(assert_deferredlist_succeeded)
-        d.addCallback(get_deferredlist_return_column)
-        d.addCallback(merge_dicts)
-        return d
+        queue = Queue()
+        threads = [ MtimeScanner(queue, c) for c in chunks ]
+        [ t.start() for t in threads ]
+        donecount = 0
+        resultdict = {}
+        while donecount < len(chunks):
+            val = queue.get()
+            if val is None:
+                donecount += 1
+            else:
+                resultdict[val[0]] = val[1]
+        [ t.join() for t in threads ]
+        return resultdict
 
     def scan_source_files_mtimes(self):
         '''
@@ -322,15 +366,13 @@ class Synchronizer(object):
         It is not an error to call this method before having used
         scan_source_files(), but it will produce no result.
         
-        this operation blocks -- as such, it returns a deferred
+        This operation blocks.
         '''
         filenames = self.source_files.keys()
-        d = self.__generic_scan_mtimes_of_file_list(filenames)
-        def done(files_mtimes):
-            self.source_files_mtimes = files_mtimes
-            return files_mtimes
-        d.addCallback(done)
-        return d
+        files_mtimes = self.__generic_scan_mtimes_of_file_list(filenames)
+        self.source_files_mtimes = files_mtimes
+        return [ x for x in self.source_files_mtimes.items()
+                if isinstance(x[1], Exception) ]
 
     def scan_target_dir(self):
         '''
@@ -342,15 +384,14 @@ class Synchronizer(object):
         
         It is an error to call this method before set_target_dir()
         
-        this operation blocks -- as such, it returns a deferred
+        This operation blocks.
         '''
-
-        d = threads.deferToThread(list_files_recursively, self.target_dir)
-        def done(files):
-            self.target_files = files
-            return files
-        d.addCallback(done)
-        return d
+        try:
+            d = list_files_recursively(self.target_dir)
+            self.target_files = d
+            return []
+        except Exception, e:
+            return [(self.target_dir, e)]
 
     def scan_target_dir_mtimes(self):
         '''
@@ -365,15 +406,13 @@ class Synchronizer(object):
         It is not an error to call this method before having used
         scan_target_dir(), but it will produce no result.
         
-        this operation blocks -- as such, it returns a deferred
+        This operation blocks.
         '''
         filenames = self.target_files
-        d = self.__generic_scan_mtimes_of_file_list(filenames)
-        def done(files_mtimes):
-            self.target_files_mtimes = files_mtimes
-            return files_mtimes
-        d.addCallback(done)
-        return d
+        files_mtimes = self.__generic_scan_mtimes_of_file_list(filenames)
+        self.target_files_mtimes = files_mtimes
+        return [ x for x in self.target_files_mtimes.items()
+                if isinstance(x[1], Exception) ]
 
     def _fatmapper(self, path):
         # the mapper function needs to take FAT32 into account, and needs
@@ -460,32 +499,14 @@ class Synchronizer(object):
         )
         return need_to_transfer, wont_transfer
 
-    def ensure_directories_exist(self, dirs):
+    def _ensure_directories_exist(self, dirs):
         for t in dirs:
             if not t:
                 continue
             if not os.path.exists(t):
                 os.makedirs(t)
 
-    def synchronize(self, concurrency=1):
-        '''
-        Computes synchronization between sources and target, then
-        gets ready to sync using a thread pool, dispatching tasks to it.
-        The start of the sync process happens immediately.
-        
-        The entry conditions for this function are the same as the conditions
-        for the self.compute_synchronization function. You must wait until
-        a synchronization is done to synchronize again.
-        
-        This function does not block.  It returns one thing only:
-              a dictionary {source_file:deferred), one per dispatched task:
-              each deferred fires when the particular task associated to the
-              source_file is done, sending the destination path as the result
-              to its callback.
-              if the sync is cancelled while in progress or otherwise fails,
-              the errback will fire instead, receiving a failure instance.
-        '''
-        def transcode(s, d):
+    def _transcode_wrapper(self, s, d):
             # adapt the transcoder interface to return the source file
             # because the transcoder returns old and new formats
             tempp, tempf = os.path.dirname(d), os.path.basename(d)
@@ -494,7 +515,7 @@ class Synchronizer(object):
             try:
                 self.transcoder.transcode(s, tempd)
                 transfer_tags(s, tempd)
-            except Exception, e:
+            except BaseException, e:
                 try:
                     os.unlink(tempd)
                 except Exception:
@@ -507,39 +528,31 @@ class Synchronizer(object):
             os.rename(tempd, d)
             return d
 
+    def synchronize(self, concurrency=1):
+        '''
+        Computes synchronization between sources and target, then
+        gets ready to sync using a thread pool, dispatching tasks to it.
+        The start of the sync process happens immediately.
+
+        The entry conditions for this function are the same as the conditions
+        for the self.compute_synchronization function. You must wait until
+        a synchronization is done to synchronize again.
+
+        This function blocks.  As it processes files in its plan, it returns
+        a tuple (source_file:destination_file or Exception).
+        '''
+
         # FIXME if adding params to the following call, add them below too
         will_sync, _ = self.compute_synchronization()
 
-        # create the directories
-        target_dirs = set([ os.path.dirname(m) for m in will_sync.values()])
-        self.ensure_directories_exist(target_dirs)
-
-        # dispatch execution of transcoders
-        self.sync_pool = ThreadPool(maxthreads=concurrency,
-                                    minthreads=concurrency)
-        self.sync_tasks = {}
+        # dispatch execution of transcoders, creating directories as we go
         for src, dst in will_sync.items():
-            self.sync_tasks[src] = \
-                deferToThreadPool(
-                  reactor,
-                  self.sync_pool,
-                  transcode,
-                  src,
-                  dst,
-                )
-        def sync_done(result):
-            self.src_to_dst_map = will_sync
-            self.sync_pool.stop()
-
-        self.sync_pool.start()
-        sync_done_trigger = DeferredList(self.sync_tasks.values())
-        sync_done_trigger.addCallback(sync_done)
-        return self.sync_tasks
-
-        # FIXME: make sure that all the deferreds heave fired with
-        # completion information
-        # and those which weren't done, fire with a Cancelled exception
-        # otherwise the DeferredList will forever be not completed
+            try:
+                target_dir = [os.path.dirname(dst)]
+                self._ensure_directories_exist(target_dir)
+                yield src, self._transcode_wrapper(src, dst)
+            except Exception, e:
+                yield src, e
 
     def synchronize_playlists(self):
         '''
@@ -549,48 +562,51 @@ class Synchronizer(object):
         The entry conditions for this function are the same as the entry
         conditions of synchronize().
 
+        It returns a list of (target path, Exception).
+
         This function blocks with impunity.
         '''
         # FIXME if adding params to the following call, add them above too
         will_sync, wont_sync = self.compute_synchronization(unconditional=True)
 
         target_playlist_dir = os.path.join(self.target_dir, "Playlists")
-        self.ensure_directories_exist([target_playlist_dir])
+        try:
+            self._ensure_directories_exist([target_playlist_dir])
+        except Exception, e:
+            return [(target_playlist_dir, e)]
 
+        excs = []
         for p in self.playlists:
-            pdir = os.path.dirname(p)
-            pf = open(p)
-            pfl = pf.readlines()
-            newpfl = []
-            for l in pfl:
-                if not l.startswith("#"):
-                    oldl = "# was: " + l
-                    l = l.strip()
-                    truel = os.path.abspath(os.path.join(pdir, l))
-                    if truel in will_sync:
-                        l = will_sync[truel]
-                        l = os.path.relpath(l, target_playlist_dir)
-                    elif truel in wont_sync:
-                        l = "# not synced because of %s" % wont_sync[truel]
-                    elif not l:
-                        oldl = ""
-                    else:
-                        assert 0, l
-                    l = l + "\n"
-                    l = oldl + l
-                newpfl.append(l)
             newp = os.path.join(target_playlist_dir, os.path.basename(p))
-            newpf = open(newp, "wb")
-            newpf.writelines(newpfl)
-            newpf.flush()
-            newpf.close()
-            pf.close()
+            try:
+                pdir = os.path.dirname(p)
+                pf = open(p)
+                pfl = pf.readlines()
+                newpfl = []
+                for l in pfl:
+                    if not l.startswith("#"):
+                        oldl = "# was: " + l
+                        l = l.strip()
+                        truel = os.path.abspath(os.path.join(pdir, l))
+                        if truel in will_sync:
+                            l = will_sync[truel]
+                            l = os.path.relpath(l, target_playlist_dir)
+                        elif truel in wont_sync:
+                            l = "# not synced because of %s" % wont_sync[truel]
+                        elif not l:
+                            oldl = ""
+                        else:
+                            assert 0, l
+                        l = l + "\n"
+                        l = oldl + l
+                    newpfl.append(l)
+                newpf = open(newp, "wb")
+                newpf.writelines(newpfl)
+                newpf.flush()
+                newpf.close()
+                pf.close()
+            except Exception, e:
+                excs.append(newp, e)
+        return excs
 
-
-        # FIXME: make sure that all the deferreds heave fired with
-        # completion information
-        # and those which weren't done, fire with a Cancelled exception
-        # otherwise the DeferredList will forever be not completed
-
-
-#=====================================================
+#=================== end synchronizer code ========================

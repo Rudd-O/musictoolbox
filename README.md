@@ -22,7 +22,6 @@ Requirements
 This is a non-exhaustive list of requirements for most of these utilities to work:
 
   - python-setuptools
-  - python-twisted
   - ffmpeg
   - python-mutagen
   - mp3gain

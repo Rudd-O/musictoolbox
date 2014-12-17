@@ -4,14 +4,13 @@ Created on Aug 11, 2012
 @author: rudd-o
 '''
 
-from twisted.trial import unittest
+import unittest
 from StringIO import StringIO
 import tempfile
 import os
 import musictoolbox.synccore as mod
 import shutil
 from musictoolbox import transcoders
-from twisted.internet.defer import DeferredList
 
 # FIXME: test musictoolbox.synccli
 
@@ -75,8 +74,16 @@ class TestParsePlaylists(unittest.TestCase):
 
     def test_synthetic_playlists(self):
         sources, output = synthetic_playlists_fixtures()
-        files = mod.parse_playlists(sources)
+        files, excs = mod.parse_playlists(sources)
         self.assertEquals(files, output)
+        self.assertEquals(excs, [])
+
+    def test_nonexistent_playlists(self):
+        sources = ["does not exist"]
+        files, excs = mod.parse_playlists(sources)
+        self.assertEquals(files, {})
+        self.assertTrue(excs[0][0], "does not exist")
+        self.assertTrue(isinstance(excs[0][1], IOError))
 
 
 class TestListFilesRecursively(unittest.TestCase):
@@ -93,10 +100,10 @@ class TestScanMtimes(unittest.TestCase):
 
     def test_mtimes(self):
         f, t = mtimes_fixtures()
-        result = mod.scan_mtimes([x.name for x in f])
+        result = list(mod.scan_mtimes([x.name for x in f]))
         [x.close() for x in f]
-        self.assertEquals(result[f[0].name], t[0])
-        self.assertEquals(result[f[0].name], t[0])
+        self.assertEquals(result[0][1], t[0])
+        self.assertEquals(result[1][1], t[1])
 
 
 class TestVfatProtect(unittest.TestCase):
@@ -254,13 +261,11 @@ class TestSynchronizer(unittest.TestCase):
     def test_parse_playlists(self):
         sources, output = synthetic_playlists_fixtures()
         [ self.k.add_playlist(p) for p in sources ]
-        d = self.k.parse_playlists()
-        def expectations(filelist):
-            self.assertTrue(lambda: len(filelist))
-            self.assertEquals(self.k.playlists, sources)
-            self.assertEquals(self.k.source_files, output)
-        d.addCallback(expectations)
-        return d
+        self.k.parse_playlists()
+        filelist = self.k.source_files
+        self.assertTrue(lambda: len(filelist))
+        self.assertEquals(self.k.playlists, sources)
+        self.assertEquals(self.k.source_files, output)
 
     def test_scan_source_files_mtimes(self):
         f, t = mtimes_fixtures()
@@ -268,52 +273,45 @@ class TestSynchronizer(unittest.TestCase):
         p2 = StringIO(f[1].name)
         [ self.k.add_playlist(p) for p in [p1, p2] ]
 
-        d = self.k.parse_playlists()
-        d.addCallback(lambda x: self.k.scan_source_files_mtimes())
-        def expectations():
-            [x.close() for x in f]
+        try:
+            self.k.parse_playlists()
+            self.k.scan_source_files_mtimes()
             self.assertTrue(f[0].name in self.k.source_files)
             self.assertTrue(f[1].name in self.k.source_files)
             self.assertTrue(f[0].name in self.k.source_files_mtimes)
             self.assertTrue(f[1].name in self.k.source_files_mtimes)
             self.assertEquals(self.k.source_files_mtimes[f[0].name], t[0])
             self.assertEquals(self.k.source_files_mtimes[f[1].name], t[1])
-        d.addCallback(lambda _: expectations())
-        return d
+        finally:
+            [x.close() for x in f]
 
     def test_scan_source_files_mtimes_nofiles(self):
-        d = self.k.parse_playlists()
-        d.addCallback(lambda x: self.k.scan_source_files_mtimes())
-        def expectations():
-            self.assertTrue(lambda: len(self.k.source_files) == 0)
-            self.assertTrue(lambda: len(self.k.source_files_mtimes) == 0)
-        d.addCallback(lambda _: expectations())
-        return d
+        self.k.parse_playlists()
+        self.assertTrue(lambda: len(self.k.source_files) == 0)
+        self.assertTrue(lambda: len(self.k.source_files_mtimes) == 0)
 
     def test_scan_target_dir(self):
         directory, files, _ = list_files_recursively_fixtures()
         self.k.set_target_dir(directory)
-        d = self.k.scan_target_dir()
-        def expectations(filelist):
-            shutil.rmtree(directory)
+        try:
+            self.k.scan_target_dir()
             for f in files: self.assertIn(f, self.k.target_files)
-        d.addCallback(expectations)
-        return d
+        finally:
+            shutil.rmtree(directory)
 
     def test_scan_target_dir_mtimes(self):
         directory, files, mtimes = list_files_recursively_fixtures()
         self.k.set_target_dir(directory)
-        d = self.k.scan_target_dir()
-        d.addCallback(lambda _: self.k.scan_target_dir_mtimes())
-        def expectations(filelist):
-            shutil.rmtree(directory)
+        try:
+            self.k.scan_target_dir()
+            self.k.scan_target_dir_mtimes()
             for f in files:
                 self.assertIn(f, self.k.target_files)
                 self.assertIn(f, self.k.target_files_mtimes)
                 expected_mtimes = dict(zip(files, mtimes))
                 self.assertEquals(self.k.target_files_mtimes, expected_mtimes)
-        d.addCallback(expectations)
-        return d
+        finally:
+            shutil.rmtree(directory)
 
     def test_compute_synchronization(self):
         self.k.set_target_dir("/target")
@@ -376,26 +374,19 @@ class TestSynchronizer(unittest.TestCase):
         self.transcoded = {}
         def compute_synchronization():
             return {"a":"b"}, {}
-        def transcode(src, dst):
-            self.transcoded = {src:dst}
+        def transcode_wrapper(src, dst):
+            return dst
         self.k.compute_synchronization = compute_synchronization
-        self.k.transcoder.transcode = transcode
+        self.k._transcode_wrapper = transcode_wrapper
         self.k.ensure_directories_exist = lambda _: None
 
         sync_tasks = self.k.synchronize()
-        def on_individual_task_done(src, dst):
-            self.assertTrue(src == "a")
-            self.assertTrue(dst == "b")
-        for f, t in sync_tasks.items():
-            t.addCallback(lambda r: on_individual_task_done(f, r))
-
-        dl = DeferredList(sync_tasks.values())
-        def on_done(result):
-            mod.assert_deferredlist_succeeded(result)
-            self.assertEquals(self.transcoded, {"a":"b"})
-            self.assertTrue(not hasattr(self.k, "sync_pool"))
-        dl.addCallback(on_done)
-        return dl
+        number = 0
+        for f, result in sync_tasks:
+            self.assertEquals(f, "a")
+            self.assertEquals(result, "b")
+            number += 1
+        self.assertEquals(number, 1)
 
     def test_bad_synchronize(self):
         self.transcoded = {}
@@ -408,19 +399,6 @@ class TestSynchronizer(unittest.TestCase):
         self.k.transcoder.transcode = transcode
         self.k.ensure_directories_exist = lambda _: None
 
-        sync_tasks = self.k.synchronize()
-
-        def on_individual_task_failed(src, failure):
-            self.fired.append((src, failure))
-        for f, t in sync_tasks.items():
-            t.addErrback(lambda failure: on_individual_task_failed(f, failure))
-
-        dl = DeferredList(sync_tasks.values())
-        def on_done(result):
-            mod.assert_deferredlist_succeeded(result)
-            self.assertEquals(self.transcoded, {})
-            self.assertTrue(not hasattr(self.k, "sync_pool"))
-            self.assertEquals(len(self.fired), 2)
-        dl.addCallback(on_done)
-
-        return dl
+        sync_tasks = list(self.k.synchronize())
+        results = [ x[1] for x in sync_tasks ]
+        assert all(isinstance(x, Exception) for x in results)
