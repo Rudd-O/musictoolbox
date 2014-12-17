@@ -85,11 +85,11 @@ class LegacyTranscoder(Transcoder):
         old.transcode_file(src, dst)
 
 
-class FlvMp4ToMp3Transcoder(Transcoder):
+class FlvMp4WebmToMp3Transcoder(Transcoder):
     '''Transcodes from FLV / MP4 to MP3, avoiding retranscoding if possible.'''
 
     def would_transcode_to(self, from_):
-        if from_ in ["flv", "mp4"]: return "mp3"
+        if from_ in ["flv", "mp4", "webm"]: return "mp3"
         raise CannotTranscode(from_)
 
     def transcode(self, src, dst):
@@ -124,11 +124,11 @@ class FlvMp4ToMp3Transcoder(Transcoder):
             )
 
 
-class FlvMp4ToWavTranscoder(Transcoder):
+class FlvMp4WebmToWavTranscoder(Transcoder):
     '''Transcodes from FLV / MP4 to RIFF WAVE 32 bit float.'''
 
     def would_transcode_to(self, from_):
-        if from_ in ["flv", "mp4"]: return "wav"
+        if from_ in ["flv", "mp4", "webm"]: return "wav"
         raise CannotTranscode(from_)
 
     def transcode(self, src, dst):
@@ -206,9 +206,9 @@ class ConfigurableTranscoder(Transcoder):
             return CopyTranscoder()
 
         known_transcoders = [
-                             FlvMp4ToMp3Transcoder,
+                             FlvMp4WebmToMp3Transcoder,
                              AudioToMp3Transcoder,
-                             FlvMp4ToWavTranscoder,
+                             FlvMp4WebmToWavTranscoder,
                              AudioToWavTranscoder,
                              ]
 
