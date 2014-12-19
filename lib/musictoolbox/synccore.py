@@ -584,7 +584,7 @@ class Synchronizer(object):
                     len(threads), len(will_sync.items()))
 
         try:
-            while ended < concurrency:
+            while ended < len(chunks):
                 val = queue.get()
                 if val is None:
                     ended += 1
