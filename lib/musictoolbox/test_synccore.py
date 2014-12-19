@@ -378,25 +378,48 @@ class TestSynchronizer(unittest.TestCase):
         self.assertEquals(ops[1], {'/invalidsource/a.OgG': e})
 
     def test_synchronize(self):
-        self.transcoded = {}
+        old = mod.TranscoderSlave._transcode_wrapper
         def compute_synchronization():
             return {"a":"b"}, {}
-        def transcode_wrapper(src, dst):
+        def transcode_wrapper(self, src, dst):
             return dst
         self.k.compute_synchronization = compute_synchronization
-        self.k._transcode_wrapper = transcode_wrapper
-        self.k.ensure_directories_exist = lambda _: None
+        mod.TranscoderSlave._transcode_wrapper = transcode_wrapper
+        self.k._ensure_directories_exist = lambda _: None
+        try:
+            sync_tasks = self.k.synchronize()
+            number = 0
+            for f, result in sync_tasks:
+                self.assertEquals(f, "a")
+                self.assertEquals(result, "b")
+                number += 1
+            self.assertEquals(number, 1)
+        finally:
+            mod.TranscoderSlave._transcode_wrapper = old
 
-        sync_tasks = self.k.synchronize()
-        number = 0
-        for f, result in sync_tasks:
-            self.assertEquals(f, "a")
-            self.assertEquals(result, "b")
-            number += 1
-        self.assertEquals(number, 1)
+    def test_synchronize_with_changing_extension(self):
+        old = mod.TranscoderSlave._transcode_wrapper
+        def compute_synchronization():
+            return {"a.mp3":"b.mp3"}, {}
+        def transcode_wrapper(self, src, dst):
+            return "b.wav"
+        self.k.compute_synchronization = compute_synchronization
+        mod.TranscoderSlave._transcode_wrapper = transcode_wrapper
+        self.k._ensure_directories_exist = lambda _: None
+        try:
+            sync_tasks = self.k.synchronize()
+            number = 0
+            for f, result in sync_tasks:
+                self.assertEquals(f, "a.mp3")
+                self.assertEquals(result, "b.wav")
+                number += 1
+            self.assertEquals(number, 1)
+            self.assertIn("b.mp3", self.k.expected_vs_real_files)
+            self.assertEquals("b.wav", self.k.expected_vs_real_files["b.mp3"])
+        finally:
+            mod.TranscoderSlave._transcode_wrapper = old
 
     def test_bad_synchronize(self):
-        self.transcoded = {}
         self.fired = []
         def compute_synchronization():
             return {"a":"b", "c":"d"}, {}
@@ -404,7 +427,7 @@ class TestSynchronizer(unittest.TestCase):
             raise Exception, "m"
         self.k.compute_synchronization = compute_synchronization
         self.k.transcoder.transcode = transcode
-        self.k.ensure_directories_exist = lambda _: None
+        self.k._ensure_directories_exist = lambda _: None
 
         sync_tasks = list(self.k.synchronize())
         results = [ x[1] for x in sync_tasks ]

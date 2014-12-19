@@ -218,11 +218,37 @@ class TranscoderSlave(Thread):
             target_dir = [os.path.dirname(dst)]
             try:
                 self.makedirs(target_dir)
-                result = self.transcoder(src, dst)
-                self.outqueue.put((src, result))
+                result = self._transcode_wrapper(src, dst)
+                self.outqueue.put((src, dst, result))
             except BaseException, e:
                 self.outqueue.put((src, e))
         self.outqueue.put(None)
+    def _transcode_wrapper(self, s, d):
+        # adapt the transcoder interface to return the source file
+        # because the transcoder returns old and new formats
+        tempp, tempf = os.path.dirname(d), os.path.basename(d)
+        tempf = 'tmp-' + tempf
+        tempd = os.path.join(tempp, tempf)
+        try:
+            newext = self.transcoder.transcode(s, tempd)
+            print "newext", newext
+            transfer_tags(s, tempd, target_format=newext)
+        except BaseException:
+            try:
+                os.unlink(tempd)
+            except Exception:
+                pass
+            raise
+        if os.stat(tempd).st_size == 0:
+            os.unlink(tempd)
+            raise AssertionError, ("we expected the transcoded file to be "
+                                   "larger than 0 bytes")
+        if newext is not None:
+            dpath, _ = os.path.splitext(d)
+            d = dpath + "." + newext
+            print "d", d
+        os.rename(tempd, d)
+        return d
     def stop(self):
         self.stopped = True
 
@@ -535,28 +561,6 @@ class Synchronizer(object):
                 if not os.path.exists(t):
                     os.makedirs(t)
 
-    def _transcode_wrapper(self, s, d):
-            # adapt the transcoder interface to return the source file
-            # because the transcoder returns old and new formats
-            tempp, tempf = os.path.dirname(d), os.path.basename(d)
-            tempf = 'tmp-' + tempf
-            tempd = os.path.join(tempp, tempf)
-            try:
-                self.transcoder.transcode(s, tempd)
-                transfer_tags(s, tempd)
-            except BaseException, e:
-                try:
-                    os.unlink(tempd)
-                except Exception:
-                    pass
-                raise e
-            if os.stat(tempd).st_size == 0:
-                os.unlink(tempd)
-                raise AssertionError, ("we expected the transcoded file to be "
-                                       "larger than 0 bytes")
-            os.rename(tempd, d)
-            return d
-
     def synchronize(self, concurrency=1):
         '''
         Computes synchronization between sources and target, then
@@ -570,6 +574,7 @@ class Synchronizer(object):
         This function blocks.  As it processes files in its plan, it returns
         a tuple (source_file:destination_file or Exception).
         '''
+        self.expected_vs_real_files = {}
         queue = Queue()
         will_sync, _ = self.compute_synchronization()
         if not will_sync.items():
@@ -579,7 +584,7 @@ class Synchronizer(object):
         threads = [ TranscoderSlave(chunk,
                                     queue,
                                     self._ensure_directories_exist,
-                                    self._transcode_wrapper)
+                                    self.transcoder)
                     for chunk in chunks ]
         [ t.start() for t in threads ]
         ended = 0
@@ -593,7 +598,12 @@ class Synchronizer(object):
                     ended += 1
                     logger.info("Thread %s is done", ended)
                 else:
-                    yield val
+                    try:
+                        source, expecteddest, realdest = val
+                        self.expected_vs_real_files[expecteddest] = realdest
+                        yield (source, realdest)
+                    except ValueError:
+                        yield val
         finally:
             logger.info("Stopping and joining all %s threads", len(threads))
             [ t.stop() for t in threads ]
@@ -636,6 +646,8 @@ class Synchronizer(object):
                         truel = os.path.abspath(os.path.join(pdir, l))
                         if truel in will_sync:
                             l = will_sync[truel]
+                            if l in self.expected_vs_real_files:
+                                l = self.expected_vs_real_files[l]
                             l = os.path.relpath(l, target_playlist_dir)
                         elif truel in wont_sync:
                             l = "# not synced because of %s" % wont_sync[truel]

@@ -135,6 +135,51 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
             )
 
 
+class ExtractAudioTranscoder(Transcoder):
+    '''Simply extracts audio from videos into a file.'''
+
+    def would_transcode_to(self, from_):
+        if from_ in ["mp4"]: return "m4a"
+        if from_ in ["flv"]: return "m4a"
+        raise CannotTranscode(from_)
+
+    def transcode(self, src, dst):
+        '''Transcode MP4 to M4A file'''
+        output = subprocess.check_output(
+                                        [
+                                         "ffprobe",
+                                         src
+                                         ],
+                                         stderr=subprocess.STDOUT,
+                                         )
+        if "Audio: mp3" in output:
+            extension = "mp3"
+        elif "Audio: aac" in output:
+            extension = "m4a"
+        else:
+            _, ext = os.path.splitext(dst)
+            raise CannotTranscode(ext[1:])
+            extension = None
+        subprocess.check_call(
+            [
+             "ffmpeg",
+             "-i", src,
+             "-acodec", "copy",
+             "-vn",
+             dst + "." + extension,
+             ],
+            stdin=None,
+            stdout=None,
+            stderr=None,
+            close_fds=True,
+        )
+        try:
+            os.rename(dst + "." + extension, dst)
+        except BaseException:
+            os.unlink(dst + "." + extension)
+        return extension
+
+
 class FlvMp4WebmToWavTranscoder(Transcoder):
     '''Transcodes from FLV / MP4 to RIFF WAVE 32 bit float.'''
 
@@ -231,6 +276,9 @@ class ConfigurableTranscoder(Transcoder):
         if to == "copy":
             return CopyTranscoder()
 
+        if to == "extractaudio":
+            return ExtractAudioTranscoder()
+
         known_transcoders = [
                              FlvMp4WebmToMp3Transcoder,
                              AudioToMp3Transcoder,
@@ -254,4 +302,4 @@ class ConfigurableTranscoder(Transcoder):
     def transcode(self, src, dst):
         from_ = os.path.splitext(src)[1][1:].lower()
         transcoder = self._lookup_transcoder(from_)
-        transcoder.transcode(src, dst)
+        return transcoder.transcode(src, dst)
