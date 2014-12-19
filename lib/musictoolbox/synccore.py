@@ -236,7 +236,6 @@ class TranscoderSlave(Thread):
         tempd = os.path.join(tempp, tempf)
         try:
             newext = self.transcoder.transcode(s, tempd)
-            print "newext", newext
             transfer_tags(s, tempd, target_format=newext)
         except BaseException:
             try:
@@ -251,7 +250,6 @@ class TranscoderSlave(Thread):
         if newext is not None:
             dpath, _ = os.path.splitext(d)
             d = dpath + "." + newext
-            print "d", d
         os.rename(tempd, d)
         return d
     def stop(self):
