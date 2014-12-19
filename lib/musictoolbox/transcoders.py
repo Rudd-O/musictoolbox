@@ -8,6 +8,7 @@ import iniparse
 from iniparse import INIConfig
 import os
 import subprocess
+import urllib
 
 
 class CannotTranscode(Exception):
@@ -102,25 +103,35 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
                                          stderr=subprocess.STDOUT,
                                          )
         if "Audio: mp3" in output:
+            src = "file://" + urllib.quote(src)
             subprocess.check_call(
                 [
                  "gst-launch-1.0",
-                 "filesrc", "location=%s" % src,
+                 "giosrc", "location=%s" % src,
                  "!", "flvdemux",
                  "!", "audio/mpeg",
                  "!", "filesink", "location=%s" % dst,
-                 ]
+                 ],
+                stdin=None,
+                stdout=None,
+                stderr=None,
+                close_fds=True,
             )
         else:
+            src = "file://" + urllib.quote(src)
             subprocess.check_call(
                 [
                  "gst-launch-1.0",
-                 "filesrc", "location=%s" % src,
+                 "giosrc", "location=%s" % src,
                  "!", "decodebin",
                  "!", "audioconvert",
                  "!", "lamemp3enc", "encoding-engine-quality=2", "quality=0",
                  "!", "filesink", "location=%s" % dst,
-                 ]
+                 ],
+                stdin=None,
+                stdout=None,
+                stderr=None,
+                close_fds=True,
             )
 
 
@@ -133,16 +144,21 @@ class FlvMp4WebmToWavTranscoder(Transcoder):
 
     def transcode(self, src, dst):
         '''Transcode FLV / MP4 to RIFF WAVE file'''
+        src = "file://" + urllib.quote(src)
         subprocess.check_call(
             [
              "gst-launch-1.0",
-             "filesrc", "location=%s" % src,
+             "giosrc", "location=%s" % src,
              "!", "decodebin",
              "!", "audioconvert",
              "!", "audio/x-raw,format=F32LE",
              "!", "wavenc",
              "!", "filesink", "location=%s" % dst,
-             ]
+             ],
+            stdin=None,
+            stdout=None,
+            stderr=None,
+            close_fds=True,
         )
 
 
@@ -156,15 +172,20 @@ class AudioToMp3Transcoder(Transcoder):
 
     def transcode(self, src, dst):
         '''Transcode audio file to MP3 file'''
+        src = "file://" + urllib.quote(src)
         subprocess.check_call(
             [
              "gst-launch-1.0",
-             "filesrc", "location=%s" % src,
+             "giosrc", "location=%s" % src,
              "!", "decodebin",
              "!", "audioconvert",
              "!", "lamemp3enc", "encoding-engine-quality=2", "quality=0",
              "!", "filesink", "location=%s" % dst,
-             ]
+             ],
+            stdin=None,
+            stdout=None,
+            stderr=None,
+            close_fds=True,
         )
 
 
@@ -178,16 +199,21 @@ class AudioToWavTranscoder(Transcoder):
 
     def transcode(self, src, dst):
         '''Transcode audio file to MP3 file'''
+        src = "file://" + urllib.quote(src)
         subprocess.check_call(
             [
              "gst-launch-1.0",
-             "filesrc", "location=%s" % src,
+             "giosrc", "location=%s" % src,
              "!", "decodebin",
              "!", "audioconvert",
              "!", "audio/x-raw,format=F32LE",
              "!", "wavenc",
              "!", "filesink", "location=%s" % dst,
-             ]
+             ],
+            stdin=None,
+            stdout=None,
+            stderr=None,
+            close_fds=True,
         )
 
 
