@@ -370,6 +370,13 @@ class TestSynchronizer(unittest.TestCase):
         self.assertEquals(ops[0], {'/source/a.mP3': '/target/a.MP3'})
         self.assertEquals(ops[1], {'/source/a.OgG': e})
 
+        self.k.source_files_mtimes = {"/invalidsource/a.OgG":e,
+                                    "/source/a.mP3":8}
+        self.k.target_files_mtimes = {"/target/a.MP3":4}
+        ops = self.k.compute_synchronization()
+        self.assertEquals(ops[0], {'/source/a.mP3': '/target/a.MP3'})
+        self.assertEquals(ops[1], {'/invalidsource/a.OgG': e})
+
     def test_synchronize(self):
         self.transcoded = {}
         def compute_synchronization():

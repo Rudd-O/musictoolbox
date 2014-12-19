@@ -493,7 +493,10 @@ class Synchronizer(object):
         # we check that the commonprefix is terminated by a slash
         # and if not, we eat up the end of the string until a slash
         # appears, or the string disappears (in which case => /)
-        source_basedir = os.path.commonprefix(self.source_files_mtimes.keys())
+        source_basedir = os.path.commonprefix([
+            k for k, v in self.source_files_mtimes.items()
+            if not isinstance(v, Exception)
+        ])
 
         while source_basedir and source_basedir[-1] != os.path.sep:
             source_basedir = source_basedir[:-len(os.path.sep)]
