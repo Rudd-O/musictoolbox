@@ -40,6 +40,16 @@ class Transcoder:
         '''
         raise NotImplementedError
 
+    def would_transcode_file_to(self, src):
+        '''
+        src is an existing path.
+
+        This method must return the target format as a file extension,
+        or raise CannotTranscode(sfmt) if it cannot transcode the file
+        in question.
+        '''
+        raise NotImplementedError
+
     def transcode(self, source_file, destination_file):
         '''Transcode source_file into destination_file.  Destination_file
         will be overwritten.
@@ -138,12 +148,7 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
 class ExtractAudioTranscoder(Transcoder):
     '''Simply extracts audio from videos into a file.'''
 
-    def would_transcode_to(self, from_):
-        if from_ in ["mp4"]: return "m4a"
-        if from_ in ["flv"]: return "m4a"
-        raise CannotTranscode(from_)
-
-    def transcode(self, src, dst):
+    def would_transcode_file_to(self, src):
         '''Transcode MP4 to M4A file'''
         output = subprocess.check_output(
                                         [
@@ -153,31 +158,27 @@ class ExtractAudioTranscoder(Transcoder):
                                          stderr=subprocess.STDOUT,
                                          )
         if "Audio: mp3" in output:
-            extension = "mp3"
+            return "mp3"
         elif "Audio: aac" in output:
-            extension = "m4a"
+            return "m4a"
         else:
-            _, ext = os.path.splitext(dst)
+            _, ext = os.path.splitext(src)
             raise CannotTranscode(ext[1:])
-            extension = None
+
+    def transcode(self, src, dst):
         subprocess.check_call(
             [
              "ffmpeg",
              "-i", src,
              "-acodec", "copy",
              "-vn",
-             dst + "." + extension,
+             dst,
              ],
             stdin=None,
             stdout=None,
             stderr=None,
             close_fds=True,
         )
-        try:
-            os.rename(dst + "." + extension, dst)
-        except BaseException:
-            os.unlink(dst + "." + extension)
-        return extension
 
 
 class FlvMp4WebmToWavTranscoder(Transcoder):
@@ -298,6 +299,10 @@ class ConfigurableTranscoder(Transcoder):
 
     def would_transcode_to(self, from_):
         return self._lookup_transcoder(from_).would_transcode_to(from_)
+
+    def would_transcode_file_to(self, src):
+        from_ = os.path.splitext(src)[1][1:].lower()
+        return self._lookup_transcoder(from_).would_transcode_file_to(src)
 
     def transcode(self, src, dst):
         from_ = os.path.splitext(src)[1][1:].lower()

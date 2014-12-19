@@ -9,7 +9,6 @@ import os
 import signal
 from threading import Thread, Lock
 from Queue import Queue
-from musictoolbox.transcoders import CannotTranscode
 from musictoolbox.old import transfer_tags
 
 logger = logging.getLogger(__name__)
@@ -111,7 +110,7 @@ def fatcompare(s, t):
 def compute_synchronization(
     sources, sourcedir,
     targets, targetdir,
-    path_mapper=lambda x: x,
+    path_mapper=lambda x, y: x,
     time_comparator=lambda x, y: 1 if x > y else 0 if x == y else -1,
     unconditional=False,
     ):
@@ -122,16 +121,17 @@ def compute_synchronization(
     All paths must be contained in their respective specified directories.
     mtime in the source dictionary can be an exception, in which case it will
     be presumed that the source file in question cannot be transferred.
-    
+
     The synchronization aims to discover the target file names based on
     the source file names, and then automatically figure out which files
     need to be transferred, based on their absence in the remote site,
     or their modification date.
-    
+
     This function accepts a path mapping callable that will transform
-    the source file names into the desired target file names prior to
-    performing the comparison.  By default, it is an identity function.
-    
+    a partial source file name, and the full path to the source file name,
+    into the desired partial target file name prior to performing the
+    date comparison.  By default, it is an identity function x, y => x.
+
     This function also accepts a time comparator function that will
     be used to perform the comparison between source and target
     modification times.  The comparator is the standard 1 0 -1 comparator
@@ -141,7 +141,7 @@ def compute_synchronization(
     FAT file system users may want to pass a custom comparator that takes
     into consideration the time resolution of FAT32 file systems
     (greater than 2 seconds). 
-    
+
     Return two dictionaries:
         1. a dictionary {s:t} where s is the source file name, and
            t is the desired target file name after transfer.
@@ -179,14 +179,19 @@ def compute_synchronization(
             raise ValueError, \
                 "target path %r not within target dir %r" % (k, target_basedir)
 
-    desired_target_files = [
-        os.path.join(
-             target_basedir, path_mapper(
-                 os.path.relpath(p, start=source_basedir)
-             )
-        )
-        for p in source_files
-    ]
+    desired_target_files = []
+    new_source_files = []
+    for p in source_files:
+        try:
+            desired_target_files.append(os.path.join(
+                target_basedir, path_mapper(
+                    os.path.relpath(p, start=source_basedir), p
+                )
+            ))
+            new_source_files.append(p)
+        except Exception, e:
+            wont_transfer[p] = e
+    source_files = new_source_files
 
     # desired target to original source map
     dt2s_map = dict(zip(desired_target_files, source_files))
@@ -218,8 +223,8 @@ class TranscoderSlave(Thread):
             target_dir = [os.path.dirname(dst)]
             try:
                 self.makedirs(target_dir)
-                result = self._transcode_wrapper(src, dst)
-                self.outqueue.put((src, dst, result))
+                self._transcode_wrapper(src, dst)
+                self.outqueue.put((src, dst))
             except BaseException, e:
                 self.outqueue.put((src, e))
         self.outqueue.put(None)
@@ -465,7 +470,7 @@ class Synchronizer(object):
         return [ x for x in self.target_files_mtimes.items()
                 if isinstance(x[1], Exception) ]
 
-    def _fatmapper(self, path):
+    def _fatmapper(self, path, originalpath):
         # the mapper function needs to take FAT32 into account, and needs
         # to know which file formats the targets will be, so it will ask
         # the transcoder about that
@@ -477,7 +482,11 @@ class Synchronizer(object):
             # split the extension and the dot proper
             dot, ext = ext[0], ext[1:]
             # look the lowercased extension up
-            newext = self.transcoder.would_transcode_to(ext.lower())
+            try:
+                newext = self.transcoder.would_transcode_to(ext.lower())
+            except NotImplementedError:
+                newext = self.transcoder.would_transcode_file_to(originalpath)
+
             # if something came back from the lookup:
             if newext:
                 # if the extension is the same, just use the original
@@ -535,12 +544,6 @@ class Synchronizer(object):
         # because the transcoder may not understand uppercase ones
 
         source_files_mtimes = dict(self.source_files_mtimes.items())
-        for f in source_files_mtimes.keys():
-            try:
-                ext = os.path.splitext(f)[1][1:].lower()
-                self.transcoder.would_transcode_to(ext)
-            except CannotTranscode, e:
-                source_files_mtimes[f] = e
 
         need_to_transfer, wont_transfer = compute_synchronization(
             source_files_mtimes,
@@ -574,7 +577,6 @@ class Synchronizer(object):
         This function blocks.  As it processes files in its plan, it returns
         a tuple (source_file:destination_file or Exception).
         '''
-        self.expected_vs_real_files = {}
         queue = Queue()
         will_sync, _ = self.compute_synchronization()
         if not will_sync.items():
@@ -598,12 +600,7 @@ class Synchronizer(object):
                     ended += 1
                     logger.info("Thread %s is done", ended)
                 else:
-                    try:
-                        source, expecteddest, realdest = val
-                        self.expected_vs_real_files[expecteddest] = realdest
-                        yield (source, realdest)
-                    except ValueError:
-                        yield val
+                    yield val
         finally:
             logger.info("Stopping and joining all %s threads", len(threads))
             [ t.stop() for t in threads ]
@@ -646,8 +643,6 @@ class Synchronizer(object):
                         truel = os.path.abspath(os.path.join(pdir, l))
                         if truel in will_sync:
                             l = will_sync[truel]
-                            if l in self.expected_vs_real_files:
-                                l = self.expected_vs_real_files[l]
                             l = os.path.relpath(l, target_playlist_dir)
                         elif truel in wont_sync:
                             l = "# not synced because of %s" % wont_sync[truel]
