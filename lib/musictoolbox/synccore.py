@@ -657,7 +657,7 @@ class Synchronizer(object):
                 newpf.close()
                 pf.close()
             except Exception, e:
-                excs.append(newp, e)
+                excs.append((newp, e))
         return excs
 
 #=================== end synchronizer code ========================
