@@ -243,7 +243,9 @@ class TranscoderSlave(Thread):
             except Exception:
                 pass
             raise
-        if os.stat(tempd).st_size == 0:
+        if (os.stat(tempd).st_size == 0
+            and
+            os.stat(s).st_size != 0):
             os.unlink(tempd)
             raise AssertionError, ("we expected the transcoded file to be "
                                    "larger than 0 bytes")
