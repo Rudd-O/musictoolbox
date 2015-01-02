@@ -9,7 +9,7 @@ import os
 import signal
 from threading import Thread, Lock
 from Queue import Queue
-from musictoolbox.old import transfer_tags
+import musictoolbox.old
 
 logger = logging.getLogger(__name__)
 
@@ -204,56 +204,78 @@ def compute_synchronization(
 
     return need_to_transfer, wont_transfer
 
+
+_dir_lock = Lock()
+
+
+def ensure_directories_exist(dirs):
+    with _dir_lock:
+        for t in dirs:
+            if not t:
+                continue
+            if not os.path.exists(t):
+                os.makedirs(t)
+
 #==================================================================
 
 
 #===================== synchronizer code ==========================
 
-class TranscoderSlave(Thread):
-    def __init__(self, work, outqueue, makedirs, transcoder):
+class SynchronizerSlave(Thread):
+    def __init__(self, work, outqueue, transcoder, postprocessor):
         Thread.__init__(self)
         self.work = work
         self.outqueue = outqueue
         self.stopped = False
-        self.makedirs = makedirs
         self.transcoder = transcoder
+        self.postprocessor = postprocessor
+
     def run(self):
         for src, dst in self.work:
             if self.stopped: break
-            target_dir = [os.path.dirname(dst)]
             try:
-                self.makedirs(target_dir)
-                self._transcode_wrapper(src, dst)
+                self._synchronize_wrapper(src, dst)
                 self.outqueue.put((src, dst))
             except BaseException, e:
                 self.outqueue.put((src, e))
         self.outqueue.put(None)
-    def _transcode_wrapper(self, s, d):
+
+    def _synchronize_wrapper(self, s, d):
         # adapt the transcoder interface to return the source file
         # because the transcoder returns old and new formats
-        tempp, tempf = os.path.dirname(d), os.path.basename(d)
-        tempf = 'tmp-' + tempf
-        tempd = os.path.join(tempp, tempf)
+        target_dir, target_file = os.path.dirname(d), os.path.basename(d)
+        tempf = 'tmp-' + target_file
         try:
-            newext = self.transcoder.transcode(s, tempd)
-            transfer_tags(s, tempd, target_format=newext)
+            ensure_directories_exist([target_dir])
         except BaseException:
             try:
-                os.unlink(tempd)
+                os.rmdir(target_dir)
             except Exception:
                 pass
             raise
-        if (os.stat(tempd).st_size == 0
+
+        tempdest = os.path.join(target_dir, tempf)
+        try:
+            newext = self.transcoder.transcode(s, tempdest)
+            self.postprocessor(s, tempdest, target_format=newext)
+        except BaseException:
+            try:
+                os.unlink(tempdest)
+            except Exception:
+                pass
+            raise
+        if (os.stat(tempdest).st_size == 0
             and
             os.stat(s).st_size != 0):
-            os.unlink(tempd)
+            os.unlink(tempdest)
             raise AssertionError, ("we expected the transcoded file to be "
                                    "larger than 0 bytes")
         if newext is not None:
             dpath, _ = os.path.splitext(d)
             d = dpath + "." + newext
-        os.rename(tempd, d)
+        os.rename(tempdest, d)
         return d
+
     def stop(self):
         self.stopped = True
 
@@ -316,7 +338,6 @@ class Synchronizer(object):
         self.target_files = []
         self.target_files_mtimes = {}
         self.transcoder = transcoder
-        self.__dir_lock = Lock()
 
     def set_transcoder(self, transcoder):
         '''Change to a different transcoder'''
@@ -556,14 +577,6 @@ class Synchronizer(object):
         )
         return need_to_transfer, wont_transfer
 
-    def _ensure_directories_exist(self, dirs):
-        with self.__dir_lock:
-            for t in dirs:
-                if not t:
-                    continue
-                if not os.path.exists(t):
-                    os.makedirs(t)
-
     def synchronize(self, concurrency=1):
         '''
         Computes synchronization between sources and target, then
@@ -583,10 +596,10 @@ class Synchronizer(object):
             return
 
         chunks = chunkify(will_sync.items(), concurrency)
-        threads = [ TranscoderSlave(chunk,
-                                    queue,
-                                    self._ensure_directories_exist,
-                                    self.transcoder)
+        threads = [ SynchronizerSlave(chunk,
+                                      queue,
+                                      self.transcoder,
+                                      musictoolbox.old.transfer_tags)
                     for chunk in chunks ]
         [ t.start() for t in threads ]
         ended = 0
@@ -624,7 +637,7 @@ class Synchronizer(object):
 
         target_playlist_dir = os.path.join(self.target_dir, "Playlists")
         try:
-            self._ensure_directories_exist([target_playlist_dir])
+            ensure_directories_exist([target_playlist_dir])
         except Exception, e:
             return [(target_playlist_dir, e)]
 

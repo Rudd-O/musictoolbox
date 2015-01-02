@@ -378,13 +378,13 @@ class TestSynchronizer(unittest.TestCase):
         self.assertEquals(ops[1], {'/invalidsource/a.OgG': e})
 
     def test_synchronize(self):
-        old = mod.TranscoderSlave._transcode_wrapper
+        old = mod.SynchronizerSlave._synchronize_wrapper
         def compute_synchronization():
             return {"a":"b"}, {}
-        def transcode_wrapper(self, src, dst):
+        def _synchronize_wrapper(self, src, dst):
             return dst
         self.k.compute_synchronization = compute_synchronization
-        mod.TranscoderSlave._transcode_wrapper = transcode_wrapper
+        mod.SynchronizerSlave._synchronize_wrapper = _synchronize_wrapper
         self.k._ensure_directories_exist = lambda _: None
         try:
             sync_tasks = self.k.synchronize()
@@ -395,7 +395,7 @@ class TestSynchronizer(unittest.TestCase):
                 number += 1
             self.assertEquals(number, 1)
         finally:
-            mod.TranscoderSlave._transcode_wrapper = old
+            mod.SynchronizerSlave._synchronize_wrapper = old
 
     def test_bad_synchronize(self):
         self.fired = []
