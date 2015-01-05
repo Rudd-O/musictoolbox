@@ -2,6 +2,7 @@
 
 import argparse
 import collections
+import fnmatch
 import os
 import textwrap
 import urllib
@@ -32,6 +33,15 @@ unlistable directories will be skipped without displaying any errors.
         description=program_shortdesc,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    parser.add_argument("-i", "--include",
+                        help="include only files matching this pattern; "
+                        "this option can be specified multiple times",
+                        metavar="pattern", action='append')
+    parser.add_argument("-x", "--exclude",
+                        help="exclude files matching this pattern, as well as "
+                        "files within directories matching this pattern; "
+                        "this option can be specified multiple times",
+                        metavar="pattern", action='append')
     parser.add_argument(dest="paths",
                         help="paths to directories or files to list",
                         metavar="path", nargs='+')
@@ -45,24 +55,47 @@ def main(argv):
     parser = get_parser()
     args = parser.parse_args()
     playlist = args.playlist
+    excludes = args.exclude
+    includes = args.include
     playlistdir = os.path.dirname(playlist)
+    playlistfile = file(playlist, "wb")
     playlistcontents = collections.OrderedDict()
     for path in args.paths:
-        for basepath, dirs, files in os.walk(path):
-                for filename in files:
-                    joined = os.path.join(basepath, filename)
-                    if not os.path.isfile(joined):
-                        continue
-                    if any(ord(x) < 32 for x in joined):
-                        joined = os.path.abspath(joined)
-                        p = "file://" + "".join(x if x >=32 and x < 128
-                                                else urllib.quote(x)
-                                                for x in joined) 
-                    else:
-                        p = os.path.relpath(joined, playlistdir)
-                    playlistcontents[p] = True
-    file(playlist, "wb").write("\n".join(playlistcontents.keys()))
-
+        for basepath, dirs, files in os.walk(path, topdown=True):
+            for d in dirs[:]:
+                # Do not walk any directories that match exclusion patterns.
+                if excludes and any(
+                    fnmatch.fnmatch(d, pat) for pat in excludes
+                ):
+                    dirs.remove(d)
+            for filename in files:
+                # If includes were specified, do not include files that do
+                # not match the inclusion patterns.
+                if includes and not any(
+                    fnmatch.fnmatch(filename, pat) for pat in includes
+                ):
+                    continue
+                # Do not include any files that match exclusion patterns.
+                if excludes and any(
+                       fnmatch.fnmatch(filename, pat) for pat in excludes
+                ):
+                    continue
+                joined = os.path.join(basepath, filename)
+                if not os.path.isfile(joined):
+                    continue
+                if any(ord(x) < 32 for x in joined):
+                    joined = os.path.abspath(joined)
+                    p = "file://" + "".join(x if x >= 32 and x < 128
+                                            else urllib.quote(x)
+                                            for x in joined)
+                else:
+                    p = os.path.relpath(joined, playlistdir)
+                if p in playlistcontents:
+                    continue
+                playlistfile.write(p + "\n")
+                playlistcontents[p] = True
+    playlistfile.flush()
+    playlistfile.close()
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
