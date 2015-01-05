@@ -2,10 +2,14 @@
 
 import argparse
 import collections
+import errno
 import fnmatch
 import os
+import tempfile
 import textwrap
 import urllib
+import shutil
+import stat
 import sys
 
 def get_parser():
@@ -51,6 +55,69 @@ unlistable directories will be skipped without displaying any errors.
     return parser
 
 
+def get_umask():
+    umask = os.umask(077)
+    os.umask(umask)
+    return umask
+
+
+class OutputWriter(object):
+    """Writes to a regular file or a special file, varying its behavior
+    depending on the type of file."""
+
+    fobject = None
+
+    def __init__(self, filename):
+        self.name = filename
+
+        try:
+            mode = os.stat(filename).st_mode
+            if stat.S_ISBLK(mode) or stat.S_ISCHR(mode) or stat.S_ISFIFO(mode):
+                self.fobject = open(filename, "wb")
+        except OSError:
+            pass
+
+        if not self.fobject:
+            directory, prefix = os.path.split(filename)
+            if not directory:
+                directory = os.path.curdir
+            if not prefix:
+                raise OSError(
+                    errno.EISDIR,
+                    os.strerror(errno.EISDIR) + ": " + repr(filename),
+                )
+            self.fobject = tempfile.NamedTemporaryFile(
+                prefix=prefix,
+                dir=directory
+            )
+
+    def write(self, text):
+        self.fobject.write(text)
+
+    def flush(self):
+        self.fobject.flush()
+
+    def close(self):
+        try:
+            if self.name != self.fobject.name:
+                try:
+                    oldmode = os.stat(self.name).st_mode
+                    os.chmod(self.fobject.name, oldmode)
+                except OSError, e:
+                    if e.errno != errno.ENOENT:
+                        raise
+                    umask = get_umask()
+                    newmode = ~umask & 0666
+                    os.chmod(self.fobject.name, newmode)
+                os.rename(self.fobject.name, self.name)
+        finally:
+            try:
+                self.fobject.close()
+            except OSError, e:
+                if e.errno != errno.ENOENT:
+                    raise
+
+
 def main(argv):
     parser = get_parser()
     args = parser.parse_args()
@@ -58,7 +125,7 @@ def main(argv):
     excludes = args.exclude
     includes = args.include
     playlistdir = os.path.dirname(playlist)
-    playlistfile = file(playlist, "wb")
+    playlistfile = OutputWriter(playlist)
     playlistcontents = collections.OrderedDict()
     for path in args.paths:
         for basepath, dirs, files in os.walk(path, topdown=True):
