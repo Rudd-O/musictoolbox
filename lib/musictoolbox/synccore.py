@@ -101,6 +101,47 @@ def vfatprotect(f):
     while " /" in f: f = f.replace(" /", "/")
     return f
 
+class VFATMapper(object):
+
+    def __init__(self, extant_paths, extension_transmogrifier=None):
+        """The mapper takes a list of existent paths on the target, rooted
+        on the same directory passed to map(path, ...) and an optional extension
+        transmogrifier that will change the extension of the file as needed,
+        for the case when the file gets transcoded."""
+        # extension_transmogrifier takes the original path passed to map()
+        # and returns the tentative new extension with the leading dot included
+        self.paths_seen = dict(zip((x.lower() for x in extant_paths),
+                                   extant_paths))
+        self.extension_transmogrifier = extension_transmogrifier
+
+    def map(self, path, originalpath):
+        """The map function takes a path rooted on the target directory
+        (/target/a is passed as a, as were extant_paths passed to __init__)
+        and the full path to originalpath such that the extension
+        transmogrifier can open and read the original path if necessary."""
+        # the mapper function needs to take FAT32 into account, and needs
+        # to know which file formats the targets will be, so it will ask
+        # the transcoder about that
+        # since FAT32 is case-insensitive but case-preserving, we look
+        # up the path in a cache, to select the preferred path
+        if self.extension_transmogrifier:
+            base, ext = os.path.splitext(path)
+            # if the file has an extension
+            if ext:
+                # check if the extension would change
+                newext = self.extension_transmogrifier(originalpath)
+                # if something came back from the lookup:
+                if newext:
+                    # if the extension is the same, just use the original
+                    if newext.lower() == ext.lower():
+                        newext = ext
+                # and reconstitute the dotted extension
+                path = base + newext
+        path = vfatprotect(path)
+        if path.lower() in self.paths_seen:
+            path = self.paths_seen[path.lower()]
+        return path
+
 def fatcompare(s, t):
     x = int(s) - int(t)
     if x >= 2: return 1
@@ -142,11 +183,13 @@ def compute_synchronization(
     into consideration the time resolution of FAT32 file systems
     (greater than 2 seconds). 
 
-    Return two dictionaries:
+    Return three dictionaries:
         1. a dictionary {s:t} where s is the source file name, and
            t is the desired target file name after transfer.
         2. a dictionary {s:e} where s is the source file name, and
            e is the exception explaining why it cannot be synced
+        3. a dictionary {s:e} of files that will be skipped, with their
+           corresponding would-be targets that already were transferred
     '''
 
     wont_transfer = dict([
@@ -194,15 +237,25 @@ def compute_synchronization(
     source_files = new_source_files
 
     # desired target to original source map
-    dt2s_map = dict(zip(desired_target_files, source_files))
+    dt2s_map = zip(source_files, desired_target_files)
+    map_of_transfer = [
+         (s,
+          t,
+          t not in target_files
+          or time_comparator(source_mtimes[s], target_mtimes[t]) > 0
+          or unconditional
+          ) for s, t in dt2s_map
+    ]
     need_to_transfer = dict([
-         (s, t) for t, s in dt2s_map.items()
-         if t not in target_files
-         or time_comparator(source_mtimes[s], target_mtimes[t]) > 0
-         or unconditional
+         (s, t) for s, t, transfer in map_of_transfer
+         if transfer
+    ])
+    skipping_transfer = dict([
+         (s, t) for s, t, transfer in map_of_transfer
+         if not transfer
     ])
 
-    return need_to_transfer, wont_transfer
+    return need_to_transfer, wont_transfer, skipping_transfer
 
 
 _dir_lock = Lock()
@@ -293,17 +346,6 @@ class Synchronizer(object):
         return self._target_files
     def _set_target_files(self, target_files):
         self._target_files = target_files
-        # as a concession to the _fatmapper method which needs to
-        # recall the proper casing of already-existing paths
-        # we create a cache of such beasts so we can look up the proper
-        # casing on any existing file
-        self.target_lower_to_canonical_map = dict([
-             (
-              os.path.relpath(p, start=self.target_dir).lower(),
-              os.path.relpath(p, start=self.target_dir)
-             )
-             for p in target_files
-        ])
     target_files = property(
                             _get_target_files,
                             _set_target_files
@@ -338,47 +380,55 @@ class Synchronizer(object):
         self.target_files = []
         self.target_files_mtimes = {}
         self.transcoder = transcoder
+        self.compute_sync_cache = None
+        self.scan_done = False
 
     def set_transcoder(self, transcoder):
         '''Change to a different transcoder'''
         self.transcoder = transcoder
+        self.scan_done = False
 
     def set_target_dir(self, target_dir):
         self.target_dir = target_dir
+        self.scan_done = False
 
     def add_playlist(self, playlist):
         self.playlists.append(playlist)
+        self.scan_done = False
 
     def scan(self):
-        """Scan all files needed to compute synchronization.
+        """Scan all files in added playlists to later compute synchronization.
 
         Returns a list of (path, Exception)."""
+        self.compute_sync_cache = None
+
         excs = []
 
         logger.info("Parsing %s playlists", len(self.playlists))
-        excs.extend(self.parse_playlists())
+        excs.extend(self._parse_playlists())
         logger.info("Discovered %s source files",
                     len(self.source_files))
 
         logger.info("Scanning target directory %s", self.target_dir)
-        excs.extend(self.scan_target_dir())
+        excs.extend(self._scan_target_dir())
         logger.info("Discovered %s target files", len(self.target_files))
 
         logger.info("Scanning %s source files mtimes",
                     len(self.source_files))
-        excs.extend(self.scan_source_files_mtimes())
+        excs.extend(self._scan_source_files_mtimes())
         logger.info("Scanned %s source files mtimes",
                     len(self.source_files_mtimes))
 
         logger.info("Scanning %s target files mtimes",
                     len(self.target_files))
-        excs.extend(self.scan_target_dir_mtimes())
+        excs.extend(self._scan_target_dir_mtimes())
         logger.info("Scanned %s target files mtimes",
                     len(self.target_files_mtimes))
 
+        self.scan_done = True
         return excs
 
-    def parse_playlists(self):
+    def _parse_playlists(self):
         '''
         scan the playlists known to the synchronizer and obtain a list
         of files.
@@ -430,7 +480,7 @@ class Synchronizer(object):
         [ t.join() for t in threads ]
         return resultdict
 
-    def scan_source_files_mtimes(self):
+    def _scan_source_files_mtimes(self):
         '''
         scan all the files in source_files for their modification
         times. do the scan in parallel for maximum performance.
@@ -451,7 +501,7 @@ class Synchronizer(object):
         return [ x for x in self.source_files_mtimes.items()
                 if isinstance(x[1], Exception) ]
 
-    def scan_target_dir(self):
+    def _scan_target_dir(self):
         '''
         scan the target dir known to the synchronizer.  the scan is
         done in a serialized manner.
@@ -470,7 +520,7 @@ class Synchronizer(object):
         except Exception, e:
             return [(self.target_dir, e)]
 
-    def scan_target_dir_mtimes(self):
+    def _scan_target_dir_mtimes(self):
         '''
         scan all the files in target_files for their modification
         times. do the scan in parallel for maximum performance.
@@ -490,35 +540,6 @@ class Synchronizer(object):
         self.target_files_mtimes = files_mtimes
         return [ x for x in self.target_files_mtimes.items()
                 if isinstance(x[1], Exception) ]
-
-    def _fatmapper(self, path, originalpath):
-        # the mapper function needs to take FAT32 into account, and needs
-        # to know which file formats the targets will be, so it will ask
-        # the transcoder about that
-        # since FAT32 is case-insensitive but case-preserving, we look
-        # up the path in a cache, to select the preferred path
-        base, ext = os.path.splitext(path)
-        # if the file has an extension
-        if ext:
-            # split the extension and the dot proper
-            dot, ext = ext[0], ext[1:]
-            # look the lowercased extension up
-            try:
-                newext = self.transcoder.would_transcode_to(ext.lower())
-            except NotImplementedError:
-                newext = self.transcoder.would_transcode_file_to(originalpath)
-
-            # if something came back from the lookup:
-            if newext:
-                # if the extension is the same, just use the original
-                if newext.lower() == ext.lower(): newext = ext
-                # and reconstitute the dotted extension
-                ext = dot + newext
-        path = base + ext
-        path = vfatprotect(path)
-        if path.lower() in self.target_lower_to_canonical_map:
-            path = self.target_lower_to_canonical_map[path.lower()]
-        return path
 
     # now for the comparison function, which works properly on FAT32
     def _fatcompare(self, s, t):
@@ -541,6 +562,9 @@ class Synchronizer(object):
         an ideal world, it would detect the file system capabilities of
         the target file system.
         '''
+
+        assert self.scan_done, "programming error: must scan first"
+
         # let's generate the source basedir
         # due to a problem in os.path.commonprefix
         # where two paths /a/bbb/ccc/ddd.mp3
@@ -549,6 +573,10 @@ class Synchronizer(object):
         # we check that the commonprefix is terminated by a slash
         # and if not, we eat up the end of the string until a slash
         # appears, or the string disappears (in which case => /)
+
+        if self.compute_sync_cache:
+            return self.compute_sync_cache
+
         source_basedir = os.path.commonprefix([
             k for k, v in self.source_files_mtimes.items()
             if not isinstance(v, Exception)
@@ -563,19 +591,38 @@ class Synchronizer(object):
         # that cannot be transcoded
         # we lowercase the extension in order to look it up properly
         # because the transcoder may not understand uppercase ones
-
         source_files_mtimes = dict(self.source_files_mtimes.items())
 
-        need_to_transfer, wont_transfer = compute_synchronization(
+        def extension_transmogrifier(originalpath):
+            _, ext = os.path.splitext(originalpath)
+            if ext:
+                ext = ext[1:]
+                try:
+                    newext = self.transcoder.would_transcode_to(ext.lower())
+                except NotImplementedError:
+                    newext = self.transcoder.would_transcode_file_to(originalpath)
+                return "." + newext
+            else:
+                return ""
+
+        mapper = VFATMapper([os.path.relpath(
+                                x,
+                                self.target_dir
+                            ) for x in self.target_files_mtimes.keys()],
+                            extension_transmogrifier)
+
+        need_to_transfer, wont_transfer, skipping = compute_synchronization(
             source_files_mtimes,
             source_basedir,
             self.target_files_mtimes,
             self.target_dir,
-            path_mapper=self._fatmapper,
+            path_mapper=mapper.map,
             time_comparator=self._fatcompare,
             unconditional=unconditional,
         )
-        return need_to_transfer, wont_transfer
+
+        self.compute_sync_cache = (need_to_transfer, wont_transfer, skipping)
+        return self.compute_sync_cache
 
     def synchronize(self, concurrency=1):
         '''
@@ -591,7 +638,7 @@ class Synchronizer(object):
         a tuple (source_file:destination_file or Exception).
         '''
         queue = Queue()
-        will_sync, _ = self.compute_synchronization()
+        will_sync, _, _ = self.compute_synchronization()
         if not will_sync.items():
             return
 
@@ -633,7 +680,9 @@ class Synchronizer(object):
         This function blocks with impunity.
         '''
         # FIXME if adding params to the following call, add them above too
-        will_sync, wont_sync = self.compute_synchronization(unconditional=True)
+        will_sync, wont_sync, skipping = self.compute_synchronization(
+            unconditional=True
+        )
 
         target_playlist_dir = os.path.join(self.target_dir, "Playlists")
         try:
@@ -657,12 +706,15 @@ class Synchronizer(object):
                         if truel in will_sync:
                             l = will_sync[truel]
                             l = os.path.relpath(l, target_playlist_dir)
+                        if truel in skipping:
+                            l = skipping[truel]
+                            l = os.path.relpath(l, target_playlist_dir)
                         elif truel in wont_sync:
                             l = "# not synced because of %s" % wont_sync[truel]
                         elif not l:
                             oldl = ""
                         else:
-                            assert 0, l
+                            assert 0, (l, truel)
                         l = l + "\n"
                         l = oldl + l
                     newpfl.append(l)
