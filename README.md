@@ -6,15 +6,16 @@ This is a small toolbox of utilities written in Python 2 that help users groom t
 What's in the box
 -----------------
 
-- `syncplaylists`: taking a number of playlists in the command line, and a destination directory, it synchronizes all the songs in the playlists (preserving the path structure) to the destination directory.  It has the ability to transcode the files to the preferred formats of your target device as well.  Run `syncplaylists --help` for more information.
+`genplaylist` generates playlists.  Run `genplaylist --help` or see
+`get_parser()` in file `genplaylist` for more information.  More documentation
+will be forthcoming very soon.
 
-`syncplaylists will read an INI file named ~/.syncplaylists.ini to determine how to transcode.  Add the following to it:
-
-    [transcoding]
-    mp3=copy
-    *=mp3
-
-and you should be done.  More documentation coming.
+`syncplaylists` takes a number of file lists / playlists in the command line,
+and a destination directory, then synchronizes all the songs in the playlists
+to the destination directory, with optional modifications to the files and their
+names as they are copied to the destination directory.  Run
+`syncplaylists --help` or see `get_parser()` in file `synccli.py` for more
+information.  More documentation will be forthcoming very soon.
 
 Requirements
 ------------

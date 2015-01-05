@@ -5,6 +5,7 @@ from argparse import RawDescriptionHelpFormatter
 from musictoolbox.synccore import Synchronizer
 from musictoolbox.transcoders import ConfigurableTranscoder as the_transcoder
 import logging
+import textwrap
 
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,53 @@ def run_sync(dryrun, destpath, playlists, concurrency):
 
 def get_parser():
     program_name = os.path.basename(sys.argv[0])
-    program_shortdesc = "Synchronizes music to a directory"
+    program_shortdesc = "Synchronizes music to a directory."
+    program_shortdesc += "\n\n" + textwrap.dedent("""
+This program takes a number of file lists / playlists in the command line,
+and a destination directory, then synchronizes all the songs in the playlists
+to the destination directory, with optional modifications to the files and their
+names as they are copied to the destination directory, for example preserving
+the path structure except for changing characters incompatible with VFAT
+volumes to underscores.
+
+For example, suppose you have two playlists `a.m3u` and `b.m3u` (perhaps
+generated with the companion `genplaylist` program) that contain the
+respective following song lists:
+
+1. /shared/Music/Ace of Base/Everytime it rains.mp3
+2. /shared/Music/Scatman John/Scatman.mp3
+
+1. /shared/Music/Dr. Alban/It's my life (12" mix).mp3
+
+If you run `syncplaylists a.m3u b.m3u "/mounteddrive/Travel Music"`, the
+resulting directory structure in `/mounteddrive/Travel Music` will look
+like this:
+
+1. /mounteddrive/Travel Music/Ace of Base/Everytime it rains.mp3
+2. /mounteddrive/Travel Music/Scatman John/Scatman.mp3
+3. /mounteddrive/Travel Music/Music/Dr. Alban/It's my life (12_ mix).mp3
+4. /mounteddrive/Travel Music/Playlists/a.m3u
+5. /mounteddrive/Travel Music/Playlists/b.m3u
+
+with the paths in the brand new playlists `a.m3u` and `b.m3u` transmuted
+so that the song paths are relative to the location of the playlists.  This way
+your media player can automatically use the playlists you specified to play
+music for you.
+
+`syncplaylists` also has the ability to transcode the files to the preferred
+formats of your target device as well.  `syncplaylists will read an INI file
+named `~/.syncplaylists.ini` to determine how to transcode.  For example,
+if you wanted to transcode all non-MP3 files to MP3, you could add the
+following configuration to the file:
+
+    [transcoding]
+    mp3=copy
+    *=mp3
+
+and then `syncplaylists` will do a best-effort attempt to transcode the files
+in your playlists to MP3, except for the MP3 files themselves which would just
+get copied as per the `copy` action specified in the configuration file.
+    """).strip()
 
     parser = ArgumentParser(
         prog=program_name,
@@ -134,6 +181,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
-
-# FIXME: handle ctrl-c interrupts properly
-
