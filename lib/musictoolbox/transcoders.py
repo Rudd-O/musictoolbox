@@ -100,7 +100,7 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
     '''Transcodes from FLV / MP4 to MP3, avoiding retranscoding if possible.'''
 
     def would_transcode_to(self, from_):
-        if from_ in ["flv", "mp4", "webm"]: return "mp3"
+        if from_ in ["flv", "mp4", "webm", "mkv"]: return "mp3"
         raise CannotTranscode(from_)
 
     def transcode(self, src, dst):
@@ -185,7 +185,7 @@ class FlvMp4WebmToWavTranscoder(Transcoder):
     '''Transcodes from FLV / MP4 to RIFF WAVE 32 bit float.'''
 
     def would_transcode_to(self, from_):
-        if from_ in ["flv", "mp4", "webm"]: return "wav"
+        if from_ in ["flv", "mp4", "webm", "mkv"]: return "wav"
         raise CannotTranscode(from_)
 
     def transcode(self, src, dst):
