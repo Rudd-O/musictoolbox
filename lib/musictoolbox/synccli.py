@@ -45,7 +45,7 @@ class SynchronizationCLIBackend:
             exitval += 2
 
         if self.dryrun:
-            ops, errors = self.synchronizer.compute_synchronization()
+            ops, errors, _ = self.synchronizer.compute_synchronization()
             for s, t in ops.items():
                 print "Source: %r\nTarget: %r\n" % (s, t)
             for s, t in errors.items():
