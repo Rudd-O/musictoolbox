@@ -706,7 +706,7 @@ class Synchronizer(object):
                         if truel in will_sync:
                             l = will_sync[truel]
                             l = os.path.relpath(l, target_playlist_dir)
-                        if truel in skipping:
+                        elif truel in skipping:
                             l = skipping[truel]
                             l = os.path.relpath(l, target_playlist_dir)
                         elif truel in wont_sync:
