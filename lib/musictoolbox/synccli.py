@@ -16,12 +16,16 @@ class SynchronizationCLIBackend:
                  destpath,
                  playlists,
                  dryrun,
-                 concurrency):
+                 concurrency,
+                 delete,
+                 exclude_beneath):
         self.synchronizer = Synchronizer(transcoder)
         self.synchronizer.set_target_dir(destpath)
+        self.synchronizer.set_exclude_beneath(exclude_beneath)
         [ self.synchronizer.add_playlist(p) for p in playlists ]
         self.dryrun = dryrun
         self.concurrency = concurrency
+        self.delete = delete
 
     def run(self):
         """Returns:
@@ -45,11 +49,14 @@ class SynchronizationCLIBackend:
             exitval += 2
 
         if self.dryrun:
-            ops, errors, _ = self.synchronizer.compute_synchronization()
+            ops, errors, _, deleting = self.synchronizer.compute_synchronization()
             for s, t in ops.items():
                 print "Source: %r\nTarget: %r\n" % (s, t)
             for s, t in errors.items():
                 print "Not transferring: %r\nBecause: %r\n" % (s, t)
+            if self.delete:
+                for t in deleting:
+                    print "Deleting: %r\n" % (t,)
             if errors:
                 exitval += 8
             return exitval
@@ -76,17 +83,29 @@ class SynchronizationCLIBackend:
             print >> sys.stderr
             exitval += 8
 
+        if self.delete:
+            deletion_failures = self.synchronizer.synchronize_playlists()
+            if deletion_failures:
+                print >> sys.stderr, "Problems while deleting files:\n"
+                for s, t in deletion_failures:
+                    print >> sys.stderr, \
+                        "Could not delete: %r\nBecause: %r\n" % (s, t)
+                print >> sys.stderr
+                exitval += 8
+
         return exitval
 
 
-def run_sync(dryrun, destpath, playlists, concurrency):
+def run_sync(dryrun, destpath, playlists, concurrency, delete, exclude_beneath):
     """Runs sync process.  Returns what SynchronizatoinCLIBackend.run() does."""
     transcoder = the_transcoder()
     w = SynchronizationCLIBackend(transcoder,
                                   destpath,
                                   playlists,
                                   dryrun,
-                                  concurrency)
+                                  concurrency,
+                                  delete,
+                                  exclude_beneath)
     return w.run()
 
 
@@ -148,6 +167,8 @@ get copied as per the `copy` action specified in the configuration file.
         formatter_class=RawDescriptionHelpFormatter
     )
     parser.add_argument("-n", "--dry-run", dest="dryrun", action="store_true", help="do nothing except show what will happen [default: %(default)s]")
+    parser.add_argument("-d", "--delete", dest="delete", action="store_true", help="remove all files that are not mentioned in the playlists [default: %(default)s]")
+    parser.add_argument("-e", "--exclude", dest="exclude", action="append", help="ignore all files underneath these paths or that match the specific path [default: %(default)s]")
     parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
     parser.add_argument("-c", "--concurrency", metavar="NUMPROCS", dest="concurrency", type=int, default=4, help="number of concurrent processes to run [default: %(default)s]")
     parser.add_argument(dest="playlists", help="paths to M3U playlists to synchronize", metavar="playlist", nargs='+')
@@ -175,7 +196,9 @@ def main(argv=None):
         dryrun=args.dryrun,
         playlists=args.playlists,
         concurrency=args.concurrency,
-        destpath=args.destpath
+        destpath=args.destpath,
+        delete=args.delete,
+        exclude_beneath=args.exclude,
     )
 
 

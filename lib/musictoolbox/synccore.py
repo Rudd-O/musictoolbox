@@ -4,6 +4,7 @@ Created on Aug 11, 2012
 @author: rudd-o
 '''
 
+import collections
 import logging
 import os
 import signal
@@ -154,6 +155,7 @@ def compute_synchronization(
     path_mapper=lambda x, y: x,
     time_comparator=lambda x, y: 1 if x > y else 0 if x == y else -1,
     unconditional=False,
+    exclude_beneath=None,
     ):
     '''
     Compute a synchronization schedule based on a dictionary of
@@ -183,15 +185,18 @@ def compute_synchronization(
     into consideration the time resolution of FAT32 file systems
     (greater than 2 seconds). 
 
-    Return three dictionaries:
-        1. a dictionary {s:t} where s is the source file name, and
+    Return four values in a tuple:
+        1. A dictionary {s:t} where s is the source file name, and
            t is the desired target file name after transfer.
-        2. a dictionary {s:e} where s is the source file name, and
-           e is the exception explaining why it cannot be synced
-        3. a dictionary {s:e} of files that will be skipped, with their
-           corresponding would-be targets that already were transferred
+        2. A dictionary {s:e} where s is the source file name, and
+           e is the exception explaining why it cannot be synced,
+        3. A dictionary {s:e} of files that will be skipped, with their
+           corresponding would-be targets that already were transferred,
+        4. A list of files that will be deleted from the destination.
     '''
-
+    if exclude_beneath is None:
+        exclude_beneath = []
+    exclude_beneath = [os.path.abspath(p) for p in exclude_beneath]
     wont_transfer = dict([
         (k, v) for k, v in sources.items()
         if isinstance(v, Exception)
@@ -222,22 +227,23 @@ def compute_synchronization(
             raise ValueError, \
                 "target path %r not within target dir %r" % (k, target_basedir)
 
-    desired_target_files = []
+    desired_target_files = collections.OrderedDict()
     new_source_files = []
     for p in source_files:
         try:
-            desired_target_files.append(os.path.join(
+            mapped_target_file = os.path.join(
                 target_basedir, path_mapper(
                     os.path.relpath(p, start=source_basedir), p
                 )
-            ))
+            )
+            desired_target_files[mapped_target_file] = mapped_target_file
             new_source_files.append(p)
         except Exception, e:
             wont_transfer[p] = e
     source_files = new_source_files
 
     # desired target to original source map
-    dt2s_map = zip(source_files, desired_target_files)
+    dt2s_map = zip(source_files, desired_target_files.keys())
     map_of_transfer = [
          (s,
           t,
@@ -247,15 +253,22 @@ def compute_synchronization(
           ) for s, t in dt2s_map
     ]
     need_to_transfer = dict([
-         (s, t) for s, t, transfer in map_of_transfer
-         if transfer
+        (s, t) for s, t, transfer in map_of_transfer
+        if transfer and
+        not any((t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath)
     ])
     skipping_transfer = dict([
-         (s, t) for s, t, transfer in map_of_transfer
-         if not transfer
+        (s, t) for s, t, transfer in map_of_transfer
+        if not transfer and
+        not any((t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath)
     ])
+    deleting = [
+        t for t in target_files
+        if t not in desired_target_files and
+        not any((t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath)
+    ]
 
-    return need_to_transfer, wont_transfer, skipping_transfer
+    return need_to_transfer, wont_transfer, skipping_transfer, deleting
 
 
 _dir_lock = Lock()
@@ -368,7 +381,7 @@ class Synchronizer(object):
     def __init__(self, transcoder):
         '''
         Class instance initializer.
-        
+
         transcoder must be a Transcoder instance that Synchronizer
         can query to determine the target formats available and what
         formats the files will be transcoded to.
@@ -379,9 +392,14 @@ class Synchronizer(object):
         self.source_files_mtimes = {}
         self.target_files = []
         self.target_files_mtimes = {}
+        self.exclude_beneath = []
         self.transcoder = transcoder
         self.compute_sync_cache = None
         self.scan_done = False
+
+    @property
+    def target_playlist_dir(self):
+        return os.path.join(self.target_dir, "Playlists")
 
     def set_transcoder(self, transcoder):
         '''Change to a different transcoder'''
@@ -394,6 +412,10 @@ class Synchronizer(object):
 
     def add_playlist(self, playlist):
         self.playlists.append(playlist)
+        self.scan_done = False
+
+    def set_exclude_beneath(self, paths):
+        self.exclude_beneath = list(paths)
         self.scan_done = False
 
     def scan(self):
@@ -541,28 +563,25 @@ class Synchronizer(object):
         return [ x for x in self.target_files_mtimes.items()
                 if isinstance(x[1], Exception) ]
 
-    # now for the comparison function, which works properly on FAT32
-    def _fatcompare(self, s, t):
-        return fatcompare(s, t)
-
     def compute_synchronization(self, unconditional=False):
         '''Computes synchronization between sources and target.
-        
+
         You must have already parsed the playlists, scanned the target
         directory, and scanned the mtimes of all sources and targets.
-        
+
         This function does not block.  It returns a pair of dictionaries
         where the first dictionary is a manifest of synchronization operations
         {source:target} that must be executed to bring the target up-to-date
-        with respect to the source, and the second dictionary is a manifest
+        with respect to the source, the second dictionary is a manifest
         of {source:reason} where source is a source path name and reason
-        is an exception explaining why it won't be transferred.
-        
+        is an exception explaining why it won't be transferred, the third
+        dictionary contains files that should be skipped, and the fourth
+        list is a list of files that must be deleted.
+
         This function has a preference for FAT32 target file systems. In
         an ideal world, it would detect the file system capabilities of
         the target file system.
         '''
-
         assert self.scan_done, "programming error: must scan first"
 
         # let's generate the source basedir
@@ -611,17 +630,19 @@ class Synchronizer(object):
                             ) for x in self.target_files_mtimes.keys()],
                             extension_transmogrifier)
 
-        need_to_transfer, wont_transfer, skipping = compute_synchronization(
+        def comparer(s, t):
+            return fatcompare(s, t)
+
+        self.compute_sync_cache = compute_synchronization(
             source_files_mtimes,
             source_basedir,
             self.target_files_mtimes,
             self.target_dir,
             path_mapper=mapper.map,
-            time_comparator=self._fatcompare,
+            time_comparator=comparer,
             unconditional=unconditional,
+            exclude_beneath=self.exclude_beneath + [self.target_playlist_dir],
         )
-
-        self.compute_sync_cache = (need_to_transfer, wont_transfer, skipping)
         return self.compute_sync_cache
 
     def synchronize(self, concurrency=1):
@@ -638,7 +659,7 @@ class Synchronizer(object):
         a tuple (source_file:destination_file or Exception).
         '''
         queue = Queue()
-        will_sync, _, _ = self.compute_synchronization()
+        will_sync, _, _, _ = self.compute_synchronization()
         if not will_sync.items():
             return
 
@@ -680,19 +701,18 @@ class Synchronizer(object):
         This function blocks with impunity.
         '''
         # FIXME if adding params to the following call, add them above too
-        will_sync, wont_sync, skipping = self.compute_synchronization(
+        will_sync, wont_sync, skipping, _ = self.compute_synchronization(
             unconditional=True
         )
 
-        target_playlist_dir = os.path.join(self.target_dir, "Playlists")
         try:
-            ensure_directories_exist([target_playlist_dir])
+            ensure_directories_exist([self.target_playlist_dir])
         except Exception, e:
-            return [(target_playlist_dir, e)]
+            return [(self.target_playlist_dir, e)]
 
         excs = []
         for p in self.playlists:
-            newp = os.path.join(target_playlist_dir, os.path.basename(p))
+            newp = os.path.join(self.target_playlist_dir, os.path.basename(p))
             try:
                 pdir = os.path.dirname(p)
                 pf = open(p)
@@ -705,10 +725,10 @@ class Synchronizer(object):
                         truel = os.path.abspath(os.path.join(pdir, l))
                         if truel in will_sync:
                             l = will_sync[truel]
-                            l = os.path.relpath(l, target_playlist_dir)
+                            l = os.path.relpath(l, self.target_playlist_dir)
                         elif truel in skipping:
                             l = skipping[truel]
-                            l = os.path.relpath(l, target_playlist_dir)
+                            l = os.path.relpath(l, self.target_playlist_dir)
                         elif truel in wont_sync:
                             l = "# not synced because of %s" % wont_sync[truel]
                         elif not l:
@@ -725,6 +745,31 @@ class Synchronizer(object):
                 pf.close()
             except Exception, e:
                 excs.append((newp, e))
+        return excs
+
+    def synchronize_deletions(self, deletor=os.unlink):
+        '''
+        Once synchronization of files and playlists has been done, sync
+        of deletions is possible.
+
+        The entry conditions for this function are the same as the entry
+        conditions of synchronize_playlists().
+
+        It returns a list of (target path, Exception).
+
+        This function blocks with impunity.
+        '''
+        # FIXME if adding params to the following call, add them above too
+        _, _, _, deleting = self.compute_synchronization(
+            unconditional=True
+        )
+
+        excs = []
+        for t in deleting:
+            try:
+                deletor(t)
+            except Exception, e:
+                excs.append((t, e))
         return excs
 
 #=================== end synchronizer code ========================

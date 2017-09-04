@@ -125,7 +125,7 @@ class TestComputeSynchronization(unittest.TestCase):
 
     def test_simple_case(self):
         m = mod.compute_synchronization({}, "/", {}, "/")
-        self.assertEquals(m, ({}, {}, {}))
+        self.assertEquals(m, ({}, {}, {}, []))
 
     def test_identical(self):
         m = mod.compute_synchronization(
@@ -350,13 +350,22 @@ class TestSynchronizer(unittest.TestCase):
         self.assertEquals(ops, {'/source/a.MP3': '/target/a.mp3'})
 
         self.k.source_files_mtimes = {"/source/a.MP3":7, "/source/a.mp3":8}
-        self.k.target_files_mtimes = {"/target/a.mp3":4}
+        self.k.target_files_mtimes = {"/target/a.mp3":4, "/target/b.mp3":6}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
-        self.assertEquals(ops, {'/source/a.mp3': '/target/a.mp3',
-                                '/source/a.MP3': '/target/a.mp3'})
+        self.assertEquals(ops, {'/source/a.MP3': '/target/a.mp3'})
         ops = self.k.compute_synchronization()[2]
         self.assertEquals(ops, {})
+        ops = self.k.compute_synchronization()[3]
+        self.assertEquals(ops, ["/target/b.mp3"])
+
+        self.k.source_files_mtimes = {"/source/a.MP3":7, "/source/a.mp3":8}
+        self.k.target_files_mtimes = {"/target/a.mp3":4, "/target/b.mp3":6}
+        self.k.exclude_beneath = ["/target"]
+        self.k.compute_sync_cache = None
+        ops = self.k.compute_synchronization()[3]
+        self.assertEquals(ops, [])
+        self.k.exclude_beneath = []
 
         self.k.source_files_mtimes = {"/source/a.MP3":7}
         self.k.target_files_mtimes = {"/target/a.MP3":4}
@@ -404,7 +413,7 @@ class TestSynchronizer(unittest.TestCase):
     def test_synchronize(self):
         old = mod.SynchronizerSlave._synchronize_wrapper
         def compute_synchronization():
-            return {"a":"b"}, {}, {}
+            return {"a":"b"}, {}, {}, []
         def _synchronize_wrapper(self, src, dst):
             return dst
         self.k.compute_synchronization = compute_synchronization
@@ -421,10 +430,19 @@ class TestSynchronizer(unittest.TestCase):
         finally:
             mod.SynchronizerSlave._synchronize_wrapper = old
 
+    def test_synchronize_deletions(self):
+        def compute_synchronization(*args, **kwargs):
+            return {"/source/a": "/target/a"}, {}, {}, ["/target/pls/zzz"]
+        self.k.compute_synchronization = compute_synchronization
+
+        res = []
+        self.k.synchronize_deletions(deletor=res.append)
+        assert res == ["/target/pls/zzz"]
+
     def test_bad_synchronize(self):
         self.fired = []
         def compute_synchronization():
-            return {"a":"b", "c":"d"}, {}, {}
+            return {"a":"b", "c":"d"}, {}, {}, []
         def transcode(src, dst):
             raise Exception, "m"
         self.k.compute_synchronization = compute_synchronization
