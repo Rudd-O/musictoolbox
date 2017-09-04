@@ -288,23 +288,27 @@ def ensure_directories_exist(dirs):
 #===================== synchronizer code ==========================
 
 class SynchronizerSlave(Thread):
-    def __init__(self, work, outqueue, transcoder, postprocessor):
+    def __init__(self, inqueue, outqueue, transcoder, postprocessor):
         Thread.__init__(self)
-        self.work = work
+        self.inqueue = inqueue
         self.outqueue = outqueue
-        self.stopped = False
         self.transcoder = transcoder
         self.postprocessor = postprocessor
 
     def run(self):
-        for src, dst in self.work:
-            if self.stopped: break
+        while True:
+            print "%s: Getting element from queue" % self
+            unused_prio, (src, dst) = self.inqueue.get()
+            print "%s: Got element %s from queue" % (self, src)
+            if src is None:
+                break
             try:
                 self._synchronize_wrapper(src, dst)
+                print "%s: Returning %s to queue" % (self, src)
                 self.outqueue.put((src, dst))
             except BaseException, e:
+                print "%s: Returning %s to queue" % (self, e)
                 self.outqueue.put((src, e))
-        self.outqueue.put(None)
 
     def _synchronize_wrapper(self, s, d):
         # adapt the transcoder interface to return the source file
@@ -658,33 +662,35 @@ class Synchronizer(object):
         This function blocks.  As it processes files in its plan, it returns
         a tuple (source_file:destination_file or Exception).
         '''
-        queue = Queue()
+        inqueue = Queue()
+        outqueue = Queue()
         will_sync, _, _, _ = self.compute_synchronization()
         if not will_sync.items():
             return
 
-        chunks = chunkify(will_sync.items(), concurrency)
-        threads = [ SynchronizerSlave(chunk,
-                                      queue,
-                                      self.transcoder,
-                                      musictoolbox.old.transfer_tags)
-                    for chunk in chunks ]
+        threads = [SynchronizerSlave(inqueue,
+                                     outqueue,
+                                     self.transcoder,
+                                     musictoolbox.old.transfer_tags)
+                   for _ in range(concurrency)]
         [ t.start() for t in threads ]
-        ended = 0
         logger.info("Synchronizing with %s threads for %s work items",
                     len(threads), len(will_sync.items()))
 
         try:
-            while ended < len(chunks):
-                val = queue.get()
-                if val is None:
-                    ended += 1
-                    logger.info("Thread %s is done", ended)
-                else:
-                    yield val
+            for s, t in will_sync.items():
+                inqueue.put(0, (s, t))
+            for _ in range(concurrency):
+                inqueue.put(1, (None, None))
+            outs = 0
+            while outs < len(will_sync):
+                val = outqueue.get()
+                outs = outs + 1
+                yield val
         finally:
+            for _ in range(concurrency):
+                inqueue.put(-1, (None, None))
             logger.info("Stopping and joining all %s threads", len(threads))
-            [ t.stop() for t in threads ]
             [ t.join() for t in threads ]
             logger.info("Ended synchronization")
 
