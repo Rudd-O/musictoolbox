@@ -297,18 +297,14 @@ class SynchronizerSlave(Thread):
 
     def run(self):
         while True:
-            print "%s: Getting element from queue" % self
             item = self.inqueue.get()
             unused_prio, (src, dst) = item
-            print "%s: Got element %s from queue" % (self, src)
             if src is None:
                 break
             try:
                 self._synchronize_wrapper(src, dst)
-                print "%s: Returning %s to queue" % (self, src)
                 self.outqueue.put((src, dst))
             except BaseException, e:
-                print "%s: Returning %s to queue" % (self, e)
                 self.outqueue.put((src, e))
 
     def _synchronize_wrapper(self, s, d):
