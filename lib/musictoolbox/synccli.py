@@ -84,7 +84,7 @@ class SynchronizationCLIBackend:
             exitval += 8
 
         if self.delete:
-            deletion_failures = self.synchronizer.synchronize_playlists()
+            deletion_failures = self.synchronizer.synchronize_deletions()
             if deletion_failures:
                 print >> sys.stderr, "Problems while deleting files:\n"
                 for s, t in deletion_failures:
