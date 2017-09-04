@@ -21,7 +21,7 @@ class SynchronizationCLIBackend:
                  exclude_beneath):
         self.synchronizer = Synchronizer(transcoder)
         self.synchronizer.set_target_dir(destpath)
-        self.synchronizer.set_exclude_beneath(exclude_beneath)
+        self.synchronizer.set_exclude_beneath(exclude_beneath or [])
         [ self.synchronizer.add_playlist(p) for p in playlists ]
         self.dryrun = dryrun
         self.concurrency = concurrency

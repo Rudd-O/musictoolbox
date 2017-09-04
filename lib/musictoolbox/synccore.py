@@ -9,7 +9,7 @@ import logging
 import os
 import signal
 from threading import Thread, Lock
-from Queue import Queue
+from Queue import Queue, PriorityQueue
 import musictoolbox.old
 
 logger = logging.getLogger(__name__)
@@ -298,7 +298,8 @@ class SynchronizerSlave(Thread):
     def run(self):
         while True:
             print "%s: Getting element from queue" % self
-            unused_prio, (src, dst) = self.inqueue.get()
+            item = self.inqueue.get()
+            unused_prio, (src, dst) = item
             print "%s: Got element %s from queue" % (self, src)
             if src is None:
                 break
@@ -662,8 +663,8 @@ class Synchronizer(object):
         This function blocks.  As it processes files in its plan, it returns
         a tuple (source_file:destination_file or Exception).
         '''
-        inqueue = Queue()
-        outqueue = Queue()
+        inqueue = PriorityQueue()
+        outqueue = PriorityQueue()
         will_sync, _, _, _ = self.compute_synchronization()
         if not will_sync.items():
             return
@@ -679,9 +680,9 @@ class Synchronizer(object):
 
         try:
             for s, t in will_sync.items():
-                inqueue.put(0, (s, t))
+                inqueue.put((0, (s, t)))
             for _ in range(concurrency):
-                inqueue.put(1, (None, None))
+                inqueue.put((1, (None, None)))
             outs = 0
             while outs < len(will_sync):
                 val = outqueue.get()
@@ -689,7 +690,7 @@ class Synchronizer(object):
                 yield val
         finally:
             for _ in range(concurrency):
-                inqueue.put(-1, (None, None))
+                inqueue.put((-1, (None, None)))
             logger.info("Stopping and joining all %s threads", len(threads))
             [ t.join() for t in threads ]
             logger.info("Ended synchronization")
