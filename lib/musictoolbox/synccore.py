@@ -5,6 +5,7 @@ Created on Aug 11, 2012
 '''
 
 import collections
+import errno
 import logging
 import os
 import signal
@@ -691,7 +692,7 @@ class Synchronizer(object):
             [ t.join() for t in threads ]
             logger.info("Ended synchronization")
 
-    def synchronize_playlists(self):
+    def synchronize_playlists(self, dryrun=False):
         '''
         Once synchronization of files has been done, synchronization of
         playlists is possible.
@@ -714,6 +715,7 @@ class Synchronizer(object):
             return [(self.target_playlist_dir, e)]
 
         excs = []
+        written = []
         for p in self.playlists:
             newp = os.path.join(self.target_playlist_dir, os.path.basename(p))
             try:
@@ -741,14 +743,24 @@ class Synchronizer(object):
                         l = l + "\n"
                         l = oldl + l
                     newpfl.append(l)
-                newpf = open(newp, "wb")
-                newpf.writelines(newpfl)
-                newpf.flush()
-                newpf.close()
-                pf.close()
+                sync = True
+                try:
+                    if open(newp, "rb").read() == ''.join(newpfl):
+                        sync = False
+                except IOError, e:
+                    if e.errno != errno.ENOENT:
+                        raise
+                if sync:
+                    written.append(newp)
+                    if not dryrun:
+                        newpf = open(newp, "wb")
+                        newpf.writelines(newpfl)
+                        newpf.flush()
+                        newpf.close()
+                        pf.close()
             except Exception, e:
                 excs.append((newp, e))
-        return excs
+        return written, excs
 
     def synchronize_deletions(self, deletor=os.unlink):
         '''

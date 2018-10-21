@@ -57,8 +57,18 @@ class SynchronizationCLIBackend:
             if self.delete:
                 for t in deleting:
                     print "Deleting: %r\n" % (t,)
+            written_playlists, playlist_failures = self.synchronizer.synchronize_playlists(dryrun=True)
+            for w in written_playlists:
+                print "Would write target playlist %r\n" % w
+            for s, t in playlist_failures:
+                print >> sys.stderr, \
+                    "Could not write: %r\nBecause: %r\n" % (s, t)
+
             if errors:
                 exitval += 8
+            if playlist_failures:
+                exitval += 8
+
             return exitval
 
         sync_tasks = self.synchronizer.synchronize(concurrency=self.concurrency)
@@ -74,7 +84,10 @@ class SynchronizationCLIBackend:
         if errors:
             exitval += 4
 
-        playlist_failures = self.synchronizer.synchronize_playlists()
+        written_playlists, playlist_failures = self.synchronizer.synchronize_playlists()
+        for p in written_playlists:
+            print >> sys.stderr, \
+                "Written: %r\n" % (p, )
         if playlist_failures:
             print >> sys.stderr, "Problems while writing playlists:\n"
             for s, t in playlist_failures:
