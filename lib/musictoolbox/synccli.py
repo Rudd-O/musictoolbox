@@ -65,7 +65,7 @@ class SynchronizationCLIBackend:
                     "Could not write: %r\nBecause: %r\n" % (s, t)
 
             if errors:
-                exitval += 8
+                exitval += 4
             if playlist_failures:
                 exitval += 8
 
