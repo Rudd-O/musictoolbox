@@ -10,7 +10,7 @@ import logging
 import os
 import signal
 from threading import Thread, Lock
-from Queue import Queue, PriorityQueue
+from queue import Queue, PriorityQueue
 import musictoolbox.old
 
 logger = logging.getLogger(__name__)
@@ -68,20 +68,20 @@ def scan_mtimes(filelist):
 def chunkify(longlist, nchunks):
     return [
           longlist[i::nchunks]
-          for i in xrange(nchunks)
+          for i in range(nchunks)
           if longlist[i::nchunks]
     ]
 
 def merge_dicts(d):
     '''take a list of dicts and merge it into a single dict'''
     r = {}
-    map(r.update, d)
+    list(map(r.update, d))
     return r
 
 def get_deferredlist_return_column(x):
     '''take a table of deferredlist's (result, return) outputs and return
     only the return column.'''
-    if x: return zip(*x)[1]
+    if x: return list(zip(*x))[1]
     return x
 
 def assert_deferredlist_succeeded(result):
@@ -112,8 +112,8 @@ class VFATMapper(object):
         for the case when the file gets transcoded."""
         # extension_transmogrifier takes the original path passed to map()
         # and returns the tentative new extension with the leading dot included
-        self.paths_seen = dict(zip((x.lower() for x in extant_paths),
-                                   extant_paths))
+        self.paths_seen = dict(list(zip((x.lower() for x in extant_paths),
+                                   extant_paths)))
         self.extension_transmogrifier = extension_transmogrifier
 
     def map(self, path, originalpath):
@@ -199,17 +199,17 @@ def compute_synchronization(
         exclude_beneath = []
     exclude_beneath = [os.path.abspath(p) for p in exclude_beneath]
     wont_transfer = dict([
-        (k, v) for k, v in sources.items()
+        (k, v) for k, v in list(sources.items())
         if isinstance(v, Exception)
     ])
     source_mtimes = dict([
-        (k, v) for k, v in sources.items()
+        (k, v) for k, v in list(sources.items())
         if not isinstance(v, Exception)
     ])
-    source_files = source_mtimes.keys()
+    source_files = list(source_mtimes.keys())
     source_basedir = sourcedir
     target_mtimes = targets
-    target_files = target_mtimes.keys()
+    target_files = list(target_mtimes.keys())
     target_basedir = os.path.abspath(targetdir)
 
     test = source_basedir + os.path.sep \
@@ -246,7 +246,7 @@ def compute_synchronization(
     source_files = new_source_files
 
     # desired target to original source map
-    dt2s_map = zip(source_files, desired_target_files.keys())
+    dt2s_map = list(zip(source_files, list(desired_target_files.keys())))
     map_of_transfer = [
          (s,
           t,
@@ -376,7 +376,7 @@ class Synchronizer(object):
         # the files list, we refresh the files list using the keys
         # of this lookup
         self._target_files_mtimes = target_files_mtimes
-        self.target_files = target_files_mtimes.keys()
+        self.target_files = list(target_files_mtimes.keys())
     target_files_mtimes = property(
                                    _get_target_files_mtimes,
                                    _set_target_files_mtimes
@@ -521,10 +521,10 @@ class Synchronizer(object):
         
         This operation blocks.
         '''
-        filenames = self.source_files.keys()
+        filenames = list(self.source_files.keys())
         files_mtimes = self.__generic_scan_mtimes_of_file_list(filenames)
         self.source_files_mtimes = files_mtimes
-        return [ x for x in self.source_files_mtimes.items()
+        return [ x for x in list(self.source_files_mtimes.items())
                 if isinstance(x[1], Exception) ]
 
     def _scan_target_dir(self):
@@ -564,7 +564,7 @@ class Synchronizer(object):
         filenames = self.target_files
         files_mtimes = self.__generic_scan_mtimes_of_file_list(filenames)
         self.target_files_mtimes = files_mtimes
-        return [ x for x in self.target_files_mtimes.items()
+        return [ x for x in list(self.target_files_mtimes.items())
                 if isinstance(x[1], Exception) ]
 
     def compute_synchronization(self, unconditional=False):
@@ -601,7 +601,7 @@ class Synchronizer(object):
             return self.compute_sync_cache
 
         source_basedir = os.path.commonprefix([
-            k for k, v in self.source_files_mtimes.items()
+            k for k, v in list(self.source_files_mtimes.items())
             if not isinstance(v, Exception)
         ])
 
@@ -614,7 +614,7 @@ class Synchronizer(object):
         # that cannot be transcoded
         # we lowercase the extension in order to look it up properly
         # because the transcoder may not understand uppercase ones
-        source_files_mtimes = dict(self.source_files_mtimes.items())
+        source_files_mtimes = dict(list(self.source_files_mtimes.items()))
 
         def extension_transmogrifier(originalpath):
             _, ext = os.path.splitext(originalpath)
@@ -631,7 +631,7 @@ class Synchronizer(object):
         mapper = VFATMapper([os.path.relpath(
                                 x,
                                 self.target_dir
-                            ) for x in self.target_files_mtimes.keys()],
+                            ) for x in list(self.target_files_mtimes.keys())],
                             extension_transmogrifier)
 
         def comparer(s, t):
@@ -665,7 +665,7 @@ class Synchronizer(object):
         inqueue = PriorityQueue()
         outqueue = PriorityQueue()
         will_sync, _, _, _ = self.compute_synchronization()
-        if not will_sync.items():
+        if not list(will_sync.items()):
             return
 
         threads = [SynchronizerSlave(inqueue,
@@ -675,10 +675,10 @@ class Synchronizer(object):
                    for _ in range(concurrency)]
         [ t.start() for t in threads ]
         logger.info("Synchronizing with %s threads for %s work items",
-                    len(threads), len(will_sync.items()))
+                    len(threads), len(list(will_sync.items())))
 
         try:
-            for s, t in will_sync.items():
+            for s, t in list(will_sync.items()):
                 inqueue.put((0, (s, t)))
             for _ in range(concurrency):
                 inqueue.put((1, (None, None)))
