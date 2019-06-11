@@ -5,7 +5,10 @@ Created on Aug 11, 2012
 '''
 
 import unittest
-from StringIO import StringIO
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 import tempfile
 import os
 import musictoolbox.synccore as mod
