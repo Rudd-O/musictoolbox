@@ -46,7 +46,7 @@ def fixopen(*args,**kwargs):
 	else:						  return mutagen.File(*args,**kwargs)
 
 def command_available(cmd):
-    try: subprocess.call([cmd],stdout=file(os.devnull),stderr=file(os.devnull))
+    try: subprocess.call([cmd],stdout=open(os.devnull, "wb"),stderr=open(os.devnull, "wb"))
     except OSError as e:
         if e.errno == 2: return False
         raise
@@ -298,7 +298,7 @@ def apply_mp3gain(filename,apply=False):
 	cmd = cmd + [filename]
 	if len(cmd) == 4: debug("Computing mp3gain ReplayGain with %s"," ".join(cmd))
 	else: debug("Applying mp3gain ReplayGain with %s"," ".join(cmd))
-	subprocess.check_call(cmd,stdout=file("/dev/null","w"),stderr=subprocess.STDOUT)
+	subprocess.check_call(cmd,stdout=open("/dev/null","wb"),stderr=subprocess.STDOUT)
 	cohere_replaygain_tags(filename)
 
 # ======= / mp3gain and soundcheck operations ==========
@@ -554,7 +554,7 @@ def decode(input,source_format):
 	output = input + ".wav"
 	decoder = decoders[source_format](input,output)
 	debug("Decoding with %s"," ".join(decoder))
-	try:	subprocess.check_call(decoder,stdout=file("/dev/null","w"),stderr=subprocess.STDOUT)
+	try:	subprocess.check_call(decoder,stdout=open("/dev/null","wb"),stderr=subprocess.STDOUT)
 	except Exception:
 		if os.path.exists(output): os.unlink(output)
 		raise
@@ -578,7 +578,7 @@ def encode(input,target_format):
 	output = input + "." + target_format
 	encoder = encoders[target_format](input,output)
 	debug("Encoding with %s"," ".join(encoder))
-	try:	subprocess.check_call(encoder,stdout=file("/dev/null","w"),stderr=subprocess.STDOUT)
+	try:	subprocess.check_call(encoder,stdout=open("/dev/null","wb"),stderr=subprocess.STDOUT)
 	except Exception:
 		if os.path.exists(output): os.unlink(output)
 		raise
@@ -924,10 +924,10 @@ class SyncManager:
 		# sources are playlist m3u files
 		def do_scan():
 			sourcedir = os.path.dirname(source)
-			files = ( os.path.abspath(os.path.join(sourcedir,x.strip())) for x in file(source).readlines() if x.strip() and not x.startswith("#") )
+			files = ( os.path.abspath(os.path.join(sourcedir,x.strip())) for x in open(source).readlines() if x.strip() and not x.startswith("#") )
 			for f in files:
 				try:
-					test = file(f,"r")
+					test = open(f,"r")
 					test.close()
 					del test
 				except Exception as e:
@@ -1012,8 +1012,8 @@ class SyncManager:
 			srcpdir = os.path.dirname(srcp)
 			destp = os.path.join(self.playlistdir,os.path.basename(srcp))
 			info("\nRewriting: %r\n->	   %r"%(srcp,destp))
-			lines = [ x.strip() for x in file(srcp).readlines() if x.strip() ]
-			f = file(destp,"w")
+			lines = [ x.strip() for x in open(srcp).readlines() if x.strip() ]
+			f = open(destp,"w")
 			for line in lines:
 				if line.startswith("#"):
 					pass
