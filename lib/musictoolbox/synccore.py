@@ -45,7 +45,7 @@ def parse_playlists(sources):
             for path in thisbatch:
                 if path not in files: files[path] = []
                 files[path].append(sourcename)
-        except Exception, e:
+        except Exception as e:
             excs.append((source, e))
     return files, excs
 
@@ -59,7 +59,7 @@ def scan_mtimes(filelist):
     def mtimeorexc(x):
         try:
             return os.stat(f).st_mtime
-        except Exception, e:
+        except Exception as e:
             return e
 
     for f in filelist:
@@ -217,16 +217,18 @@ def compute_synchronization(
            else source_basedir
     for k in source_files:
         if not k.startswith(test):
-            raise ValueError, \
+            raise ValueError(
                 "source path %r not within source dir %r" % (k, source_basedir)
+            )
 
     test = target_basedir + os.path.sep \
            if target_basedir[-len(os.path.sep)] != os.path.sep \
            else target_basedir
     for k in target_files:
         if not k.startswith(test):
-            raise ValueError, \
+            raise ValueError(
                 "target path %r not within target dir %r" % (k, target_basedir)
+            )
 
     desired_target_files = collections.OrderedDict()
     new_source_files = []
@@ -239,7 +241,7 @@ def compute_synchronization(
             )
             desired_target_files[mapped_target_file] = mapped_target_file
             new_source_files.append(p)
-        except Exception, e:
+        except Exception as e:
             wont_transfer[p] = e
     source_files = new_source_files
 
@@ -305,7 +307,7 @@ class SynchronizerSlave(Thread):
             try:
                 self._synchronize_wrapper(src, dst)
                 self.outqueue.put((src, dst))
-            except BaseException, e:
+            except BaseException as e:
                 self.outqueue.put((src, e))
 
     def _synchronize_wrapper(self, s, d):
@@ -336,7 +338,7 @@ class SynchronizerSlave(Thread):
             and
             os.stat(s).st_size != 0):
             os.unlink(tempdest)
-            raise AssertionError, ("we expected the transcoded file to be "
+            raise AssertionError("we expected the transcoded file to be "
                                    "larger than 0 bytes")
         if newext is not None:
             dpath, _ = os.path.splitext(d)
@@ -541,7 +543,7 @@ class Synchronizer(object):
             d = list_files_recursively(self.target_dir)
             self.target_files = d
             return []
-        except Exception, e:
+        except Exception as e:
             return [(self.target_dir, e)]
 
     def _scan_target_dir_mtimes(self):
@@ -711,7 +713,7 @@ class Synchronizer(object):
 
         try:
             ensure_directories_exist([self.target_playlist_dir])
-        except Exception, e:
+        except Exception as e:
             return [(self.target_playlist_dir, e)]
 
         excs = []
@@ -747,7 +749,7 @@ class Synchronizer(object):
                 try:
                     if open(newp, "rb").read() == ''.join(newpfl):
                         sync = False
-                except IOError, e:
+                except IOError as e:
                     if e.errno != errno.ENOENT:
                         raise
                 if sync:
@@ -758,7 +760,7 @@ class Synchronizer(object):
                         newpf.flush()
                         newpf.close()
                         pf.close()
-            except Exception, e:
+            except Exception as e:
                 excs.append((newp, e))
         return written, excs
 
@@ -783,7 +785,7 @@ class Synchronizer(object):
         for t in deleting:
             try:
                 deletor(t)
-            except Exception, e:
+            except Exception as e:
                 excs.append((t, e))
         return excs
 

@@ -444,7 +444,7 @@ class TestSynchronizer(unittest.TestCase):
         def compute_synchronization():
             return {"a":"b", "c":"d"}, {}, {}, []
         def transcode(src, dst):
-            raise Exception, "m"
+            raise Exception("m")
         self.k.compute_synchronization = compute_synchronization
         self.k.transcoder.transcode = transcode
         self.k._ensure_directories_exist = lambda _: None

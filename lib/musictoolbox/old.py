@@ -1,4 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
+
+from __future__ import print_function
+
 
 import sys
 import os
@@ -9,10 +12,10 @@ import signal
 import logging
 import select
 import tempfile
-import urllib
-import urlparse
+import urllib.request, urllib.parse, urllib.error
+import urllib.parse
 import threading
-import Queue
+import queue
 import multiprocessing
 import time
 
@@ -44,40 +47,40 @@ def fixopen(*args,**kwargs):
 
 def command_available(cmd):
     try: subprocess.call([cmd],stdout=file(os.devnull),stderr=file(os.devnull))
-    except OSError, e:
+    except OSError as e:
         if e.errno == 2: return False
         raise
-    except subprocess.CalledProcessError, e:
+    except subprocess.CalledProcessError as e:
         if e.returncode == 127: return False
     return True
 
 # ======= mp3gain and soundcheck operations ==========
 
 def transform_keys(f,d):
-	for k,v in d.items():
+	for k,v in list(d.items()):
 		if f(k) != k:
 			del d[k]
 			d[f(k)] = v
 	return d
 
 def convert_gain_from_mp3gain_to_txxx(gain):
-	assert type(gain) in (str,unicode)
+	assert type(gain) in (str,str)
 	if gain[-3:] == " dB": gain = gain[:-3]
 	try: gain = float(gain)
-	except ValueError: raise ValueError, "invalid gain value %r"%gain
+	except ValueError: raise ValueError("invalid gain value %r"%gain)
 	return "%.2f dB" % gain
 
 def convert_peak_from_mp3gain_to_txxx(peak):
-	assert type(peak) in (str,unicode)
+	assert type(peak) in (str,str)
 	try: peak = float(peak)
-	except ValueError: raise ValueError, "invalid peak value %r"%peak
+	except ValueError: raise ValueError("invalid peak value %r"%peak)
 	return "%.6f" % peak
 
 def convert_gain_from_txxx_to_mp3gain(gain):
-	assert type(gain) in (str,unicode)
+	assert type(gain) in (str,str)
 	if gain[-3:] == " dB": gain = gain[:-3]
 	try: gain = float(gain)
-	except ValueError: raise ValueError, "invalid gain value %r"%gain
+	except ValueError: raise ValueError("invalid gain value %r"%gain)
 	if gain >= 0.0: return "+%f dB" % gain
 	return "%f dB" % gain
 
@@ -92,29 +95,29 @@ def viewmp3norm(files):
 	while files:
 		file = files.pop(0)
 
-		print 
-		print file
+		print() 
+		print(file)
 
 		try: tags = ID3(file)
-		except Exception,e:
-			print "No ID3 tags",e
+		except Exception as e:
+			print("No ID3 tags",e)
 			tags = None
 		try: apetags = APEv2(file)
-		except Exception,e:
-			print "No APE tags",e
+		except Exception as e:
+			print("No APE tags",e)
 			apetags = None
 
 		if apetags:
-			print "===APE tags===="
-			for key,tag in apetags.items():
-				print "%30s"%key,"  ",repr(tag)
+			print("===APE tags====")
+			for key,tag in list(apetags.items()):
+				print("%30s"%key,"  ",repr(tag))
 
 		if tags:
-			print "===RVA2 tags==="
-			for key,tag in tags.items():
+			print("===RVA2 tags===")
+			for key,tag in list(tags.items()):
 				try:
 					if tag.desc.lower() in [ x[0] for x in REPLAYGAIN_TAGS ]:
-						print "%30s"%key,"  ",repr(tag)
+						print("%30s"%key,"  ",repr(tag))
 				except AttributeError: continue
 
 def detect_broken_ape_tags(files):
@@ -124,10 +127,10 @@ def detect_broken_ape_tags(files):
 			apetags = APEv2(f)
 		except mutagen.apev2.APENoHeaderError:
 			pass
-		except KeyError, e:
-			print f
-		except Exception, e:
-			print >> sys.stderr, "while processing %r: %s" % (f, e)
+		except KeyError as e:
+			print(f)
+		except Exception as e:
+			print("while processing %r: %s" % (f, e), file=sys.stderr)
 
 
 def detect_missing_ape_tags(files):
@@ -136,38 +139,38 @@ def detect_missing_ape_tags(files):
 		try:
 			apetags = APEv2(f)
 		except mutagen.apev2.APENoHeaderError:
-			print f
-		except KeyError, e:
+			print(f)
+		except KeyError as e:
 			pass
-		except Exception, e:
-			print >> sys.stderr, "while processing %r: %s" % (f, e)
+		except Exception as e:
+			print("while processing %r: %s" % (f, e), file=sys.stderr)
 
 
 def viewtags(files):
 	while files:
 		file = files.pop(0)
 
-		print 
-		print file
+		print() 
+		print(file)
 
 		try: tags = ID3(file)
-		except Exception,e:
-			print "No ID3 tags",e
+		except Exception as e:
+			print("No ID3 tags",e)
 			tags = None
 		try: apetags = APEv2(file)
-		except Exception,e:
-			print "No APE tags",e
+		except Exception as e:
+			print("No APE tags",e)
 			apetags = None
 
 		if apetags:
-			print "===APE tags===="
-			for key,tag in apetags.items():
-				print "%30s"%key,"  ",repr(tag)
+			print("===APE tags====")
+			for key,tag in list(apetags.items()):
+				print("%30s"%key,"  ",repr(tag))
 
 		if tags:
-			print "===ID3 tags==="
-			for key,tag in tags.items():
-				print "%30s"%key,"  ",repr(tag)
+			print("===ID3 tags===")
+			for key,tag in list(tags.items()):
+				print("%30s"%key,"  ",repr(tag))
 
 
 def get_mp3gain_tags(filename):
@@ -182,7 +185,7 @@ def get_mp3gain_tags(filename):
 		try: vals.append(i[t])
 		except KeyError: vals.append(None)
 	def f(s):
-		if s: return unicode(s)
+		if s: return str(s)
 		else: return None
 	if any(vals): return [ f(s) for s in vals ]
 
@@ -205,7 +208,7 @@ def gain2sc (gain,base):
 	return decimalToASCIIHex(result)
 
 def replaygain_to_soundcheck(gain):
-	if type(gain) in (str,unicode): gain = float(gain)
+	if type(gain) in (str,str): gain = float(gain)
 	soundcheck = [ gain2sc(gain, 1000), gain2sc(gain, 1000), gain2sc(gain, 2500), gain2sc(gain, 2500) ]
 	soundcheck.append("00024CA8")
 	soundcheck.append("00024CA8")
@@ -221,7 +224,7 @@ def write_soundcheck_tag(filename,text):
 			encoding=3,
 			lang="eng",
 			desc="iTunNORM",
-			text=[unicode(text)])
+			text=[str(text)])
 	metadata.save()
 
 def recalc_soundcheck(filename,mp3gain_values):
@@ -246,7 +249,7 @@ def mp3gain_to_txxx(filename):
 		if name.lower() in i: name = name.lower()
 		elif name.upper() in i: name = name.upper()
 		else: continue
-		o[name] = mutagen.id3.TXXX(desc=name.lower(),encoding=1,text=f(unicode(i[name])))
+		o[name] = mutagen.id3.TXXX(desc=name.lower(),encoding=1,text=f(str(i[name])))
 		changed = True
 	if changed: o.save(filename)
 
@@ -257,7 +260,7 @@ def txxx_to_mp3gain(filename):
 	changed = False
 	for name,f,g in REPLAYGAIN_TAGS:
 		try:
-			o[name.upper()] = g(unicode(i["TXXX:%s"%name])) ; changed = True
+			o[name.upper()] = g(str(i["TXXX:%s"%name])) ; changed = True
 		except KeyError: pass
 	if changed: o.save(filename)
 
@@ -321,17 +324,17 @@ undo_commands = {
 
 def mediafilesindir(directory):
 	newfiles = []
-	for globspec in [ "*%s"%k for k in calc_commands.keys() if not k.endswith("1") ]:
+	for globspec in [ "*%s"%k for k in list(calc_commands.keys()) if not k.endswith("1") ]:
 		newfiles.extend( glob.iglob(os.path.join(directory,globspec)) )
 	return newfiles
 
 def getalbum(filename):
 	metadata = fixopen(filename)
-	if not metadata.keys(): return None
+	if not list(metadata.keys()): return None
 
-	try: album = unicode(metadata["TALB"]).lower()
+	try: album = str(metadata["TALB"]).lower()
 	except KeyError:
-		try: album = unicode(metadata["album"]).lower() # if keyerror, no tiene album
+		try: album = str(metadata["album"]).lower() # if keyerror, no tiene album
 		except KeyError: album = ''
 	# just in case
 	if not album.strip(): return None
@@ -359,17 +362,17 @@ def alreadyhasreplay(f,album=False):
 	except (mutagen.apev2.APENoHeaderError,KeyError):
 		return False
 	if album:
-		if metadata.has_key("replaygain_album_gain"): return True
-		if metadata.has_key("REPLAYGAIN_ALBUM_GAIN"): return True
+		if "replaygain_album_gain" in metadata: return True
+		if "REPLAYGAIN_ALBUM_GAIN" in metadata: return True
 	else:
-		if metadata.has_key("replaygain_track_gain"): return True
-		if metadata.has_key("REPLAYGAIN_TRACK_GAIN"): return True
+		if "replaygain_track_gain" in metadata: return True
+		if "REPLAYGAIN_TRACK_GAIN" in metadata: return True
 	return False
 
 def alreadyhasrva2(f,album=False):
 	try: metadata = mutagen.id3.Open(f)
 	except mutagen.id3.ID3NoHeaderError: return False
-	for value in metadata.values():
+	for value in list(metadata.values()):
 		try:
 			if album and value.desc == "replaygain_album_gain": return True
 			elif value.desc == "replaygain_track_gain": return True
@@ -379,7 +382,7 @@ def alreadyhasrva2(f,album=False):
 # algorithm begins here
 
 def doreplaygain(args,options):
-	filenames = [ unicode(os.path.realpath(os.path.abspath(f)),"utf-8") for f in args ]
+	filenames = [ str(os.path.realpath(os.path.abspath(f)),"utf-8") for f in args ]
 	for f in filenames[:]:
 		if os.path.isdir(f):
 			filenames.extend(mediafilesindir(f))
@@ -411,8 +414,8 @@ def doreplaygain(args,options):
 		for extension in set([ s[0] for s in fileswithexts ]):
 			groups[extension] = [ f[1] for f in fileswithexts if f[0] == extension ]
 
-		for extension,files in groups.items():
-			for f in files: assert type(f) is unicode
+		for extension,files in list(groups.items()):
+			for f in files: assert type(f) is str
 			if len(files) == 1:
 				album = False
 				extension = extension + "1"
@@ -510,7 +513,7 @@ def maketempcopy(uri):
 	tmp_fd, tmp_path = tempfile.mkstemp(prefix="transcode-",suffix=extension,dir=dir)
 	try:
 		tmp_file = os.fdopen(tmp_fd,"w")
-		tmp_file.write(urllib.urlopen(uri).read(-1))
+		tmp_file.write(urllib.request.urlopen(uri).read(-1))
 		tmp_file.flush()
 		tmp_file.close()
 	except Exception:
@@ -588,8 +591,8 @@ def encode(input,target_format):
 def copy_tag_values(i,o,filter):
 	"""copies tag values from i to o, if filter is true"""
 	def m(k,v):
-		if filter(k,v): o[unicode(k)] = v
-	for k,v in i.items():
+		if list(filter(k,v)): o[str(k)] = v
+	for k,v in list(i.items()):
 		m(k,v)
 
 def copy_generic_tag_values_to_id3(i,o):
@@ -615,15 +618,15 @@ def copy_generic_tag_values_to_id3(i,o):
 			if type(v) not in (tuple,list): v = [v]
 			constructor = tag_transformation_map[k]
 			if callable(constructor):
-				newvalues = [ constructor(unicode(value)) for value in v ]
+				newvalues = [ constructor(str(value)) for value in v ]
 			else:
 				constructor = getattr(mutagen.id3,constructor)
-				newvalues = [ constructor(text=unicode(value),encoding=3) for value in v ]
-			map(o.add,newvalues)
+				newvalues = [ constructor(text=str(value),encoding=3) for value in v ]
+			list(map(o.add,newvalues))
 			return newvalues
 
 	transform_keys(str.lower,i)
-	for k,v in i.items(): iterate(k,v)
+	for k,v in list(i.items()): iterate(k,v)
 
 def transfer_tags_any_mp3(origin,destination,tag_reader):
 
@@ -702,21 +705,21 @@ def check_transcodable(source_format,target_format):
         if not needs_transcoding:
             return source_format
             
-        if source_format not in decoders.keys(): raise NoDecoderException,source_format
-	if type(target_format) in (list,tuple):
-		if source_format in ["flv","mp4"] and "mp3" in target_format:
-			target_format = list(target_format)
-			target_format.remove("mp3")
-		choice = None
-		for t in target_format:
-			if t in encoders.keys():
-				choice = t
-				break
-		if not choice: raise NoEncoderException,target_format
-		target_format = choice
-	else:
-		if target_format not in encoders.keys(): raise NoEncoderException,target_format
-	return target_format
+        if source_format not in list(decoders.keys()): raise NoDecoderException(source_format)
+        if type(target_format) in (list,tuple):
+                if source_format in ["flv","mp4"] and "mp3" in target_format:
+                        target_format = list(target_format)
+                        target_format.remove("mp3")
+                choice = None
+                for t in target_format:
+                        if t in list(encoders.keys()):
+                                choice = t
+                                break
+                if not choice: raise NoEncoderException(target_format)
+                target_format = choice
+        else:
+                if target_format not in list(encoders.keys()): raise NoEncoderException(target_format)
+        return target_format
 
 def transcode(uri,target_format):
 	"""receives an URI to the file to transcode, and a three letter format code
@@ -724,8 +727,8 @@ def transcode(uri,target_format):
 	source_format = uri.split(".")[-1].lower()
 	target_format = target_format.lower()
 
-	if source_format.startswith("."): raise Exception, "source format cannot start with a dot"
-	if target_format.startswith("."): raise Exception, "target format cannot start with a dot"
+	if source_format.startswith("."): raise Exception("source format cannot start with a dot")
+	if target_format.startswith("."): raise Exception("target format cannot start with a dot")
 	
 	reencode = config_reencode_same_format or "mp4" == target_format # HACK FIXME
 
@@ -736,8 +739,8 @@ def transcode(uri,target_format):
 		tempfiles.append(path)
 		return path
 	def cleanup():
-		print "Deleting the following files: %r"%tempfiles
-		map(os.unlink,tempfiles)
+		print("Deleting the following files: %r"%tempfiles)
+		list(map(os.unlink,tempfiles))
 		while tempfiles: tempfiles.pop()
 
 	try:
@@ -791,7 +794,7 @@ def locked_makedirs(dstdir):
 def transcode_file(src,dst):
 	debug("Transcoding %r to %r",src,dst)
 	destformat = os.path.splitext(dst)[1][1:]
-	newsong = transcode(urllib.pathname2url(src),destformat)
+	newsong = transcode(urllib.request.pathname2url(src),destformat)
 	rsync(newsong,dst)
 	os.unlink(newsong)
 	return dst
@@ -801,7 +804,7 @@ def cmdline_process(*args):
 	return format,path,transcode(uri,format)
 
 def parallel_transcode(format,paths):
-	uris = [ "file://" + urllib.pathname2url(os.path.abspath(path)) for path in paths ]
+	uris = [ "file://" + urllib.request.pathname2url(os.path.abspath(path)) for path in paths ]
 
 	items = [ (format,path,uri) for path,uri in zip(paths,uris) ]
 
@@ -815,14 +818,14 @@ def parallel_transcode(format,paths):
 		noresult = True
 		while noresult:
 			try:
-				print "Wait..."
+				print("Wait...")
 				format,path,transcoded = result.get(1)
 				noresult = False
 			except multiprocessing.TimeoutError:
 				pass
 		
-		print path
-		print transcoded
+		print(path)
+		print(transcoded)
 	pool.close()
 	pool.join()
 
@@ -831,11 +834,11 @@ def relativize(listoffiles,commonprefix=None):
 	return commonprefix, [ os.path.relpath(x,start=commonprefix) for x in listoffiles ]
 
 def vfatprotect(f):
-	f = f.replace("./","/")
-	for illegal in '?<>\:*|"^': f = f.replace(illegal,"_")
+        f = f.replace("./","/")
+        for illegal in '?<>\:*|"^': f = f.replace(illegal,"_")
         while "./" in f: f = f.replace("./","/")
         while " /" in f: f = f.replace(" /","/")
-	return f
+        return f
 
 def rsync(src,dst):
 	debug("Rsyncing %r to %r",src,dst)
@@ -845,11 +848,11 @@ def transfer(src,dst):
 	dr = os.path.dirname(dst)
 	if not os.path.isdir(dr):
 		try: locked_makedirs(dr)
-		except OSError,e:
+		except OSError as e:
 			if e.errno != 17: raise
 	try:
 		return transcode_file(src,dst)
-	except (NoDecoderException,NoEncoderException), e:
+	except (NoDecoderException,NoEncoderException) as e:
 		rsync(src,dst)
 		return dst
 
@@ -858,7 +861,7 @@ def transfer_wrapper(x):
 	info("\nDispatching: %r\n->	%r"%(x))
 	try:
 		return transfer(*x)
-	except Exception,e:
+	except Exception as e:
 		err("Transfer failed: %r %s",x,e)
 
 
@@ -895,11 +898,11 @@ class SyncManager:
 			newpath = os.path.splitext(newpath)[0]+".mp3"
 			newformat = check_transcodable(srcfmt,["mp3","mp4"])
 			newpath = os.path.splitext(newpath)[0]+"."+newformat
-		except (NoEncoderException,NoDecoderException),e:
+		except (NoEncoderException,NoDecoderException) as e:
 			warning("File %r will be transferred as is because of %r",path,e)
 		newpath = vfatprotect(newpath)
-                self.source_songs[newpath] = path
-                self.source_song_dates[newpath] = date
+		self.source_songs[newpath] = path
+		self.source_song_dates[newpath] = date
 		if newpath in self.destination_songs and date >= self.destination_song_dates[newpath]:
 			#info("Not transferring %r because it is already on the destination device"%newpath)
 			self.do_not_transfer.add(newpath)
@@ -927,15 +930,15 @@ class SyncManager:
 					test = file(f,"r")
 					test.close()
 					del test
-				except Exception,e:
+				except Exception as e:
 					self.lock.acquire()
-					print f
+					print(f)
 					self.exceptions.append(e)
 					self.lock.release()
 					raise
 				try:
 					self.source_song_found(f,os.stat(f).st_mtime)
-				except Exception,e:
+				except Exception as e:
 					self.lock.acquire()
 					self.exceptions.append(e)
 					self.lock.release()
@@ -954,9 +957,9 @@ class SyncManager:
 				if base == self.playlistdir: continue
 				for f in files:
 					try:
-                                                thefilename = os.path.join(base,f)
+						thefilename = os.path.join(base,f)
 						self.destination_song_found(thefilename,os.stat(thefilename).st_mtime)
-					except Exception,e:
+					except Exception as e:
 						self.lock.acquire()
 						self.exceptions.append(e)
 						self.lock.release()
@@ -972,12 +975,12 @@ class SyncManager:
 		if self.exceptions:
 			raise self.exceptions[0]
 
-        def manifest_transfer(self):
-                to_transfer = set(self.source_songs.keys()) - self.do_not_transfer
-                srcs_and_dests = [
-                        (self.source_songs[k],os.path.join(self.destdir,k))
-                        for k in to_transfer ]
-                return srcs_and_dests
+	def manifest_transfer(self):
+		to_transfer = set(self.source_songs.keys()) - self.do_not_transfer
+		srcs_and_dests = [
+			(self.source_songs[k],os.path.join(self.destdir,k))
+			for k in to_transfer ]
+		return srcs_and_dests
                 
 	def transfer_missing_songs(self):
 		srcs_and_dests = self.manifest_transfer()
@@ -1003,7 +1006,7 @@ class SyncManager:
 
 	def transfer_playlists(self):
 		# map songs in playlists to targets
-		reverse_lookup = dict( [ (y,x) for x,y in self.source_songs.items() ] )
+		reverse_lookup = dict( [ (y,x) for x,y in list(self.source_songs.items()) ] )
 		relplaylistpath = os.path.relpath(self.destdir,start=self.playlistdir)
 		for srcp in self.playlists:
 			srcpdir = os.path.dirname(srcp)
@@ -1046,12 +1049,12 @@ def sync_playlists(sourceplaylists,synctodir,dryrun=False):
 	for s in sourceplaylists: sm.scan_source(s)
 	sm.scan_destination()
 	sm.join()
-        if dryrun:
-            for x,y in sm.manifest_transfer():
-                print "Would transfer %r to %r"%(x,y)
-        else:
-            sm.transfer_missing_songs()
-            sm.transfer_playlists()
-            if remove:
-                    sm.remove_obsolete_playlists()
-                    sm.remove_obsolete_songs()
+	if dryrun:
+		for x,y in sm.manifest_transfer():
+			print("Would transfer %r to %r"%(x,y))
+	else:
+		sm.transfer_missing_songs()
+		sm.transfer_playlists()
+		if remove:
+			sm.remove_obsolete_playlists()
+			sm.remove_obsolete_songs()

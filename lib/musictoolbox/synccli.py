@@ -1,3 +1,6 @@
+from __future__ import print_function
+
+
 import sys
 import os
 from argparse import ArgumentParser
@@ -41,28 +44,27 @@ class SynchronizationCLIBackend:
         exitval = 0
         failures = self.synchronizer.scan()
         if failures:
-            print >> sys.stderr, "Problems encountered during scanning:\n"
+            print("Problems encountered during scanning:\n", file=sys.stderr)
             for s, t in failures:
-                print >> sys.stderr, \
-                    "Could not scan: %r\nBecause: %r\n" % (s, t)
-            print >> sys.stderr
+                print("Could not scan: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
+            print("", file=sys.stderr)
             exitval += 2
 
         if self.dryrun:
             ops, errors, _, deleting = self.synchronizer.compute_synchronization()
-            for s, t in ops.items():
-                print "Source: %r\nTarget: %r\n" % (s, t)
-            for s, t in errors.items():
-                print "Not transferring: %r\nBecause: %r\n" % (s, t)
+            for s, t in list(ops.items()):
+                print("Source: %r\nTarget: %r\n" % (s, t))
+            for s, t in list(errors.items()):
+                print("Not transferring: %r\nBecause: %r\n" % (s, t))
             if self.delete:
                 for t in deleting:
-                    print "Deleting: %r\n" % (t,)
+                    print("Deleting: %r\n" % (t,))
             written_playlists, playlist_failures = self.synchronizer.synchronize_playlists(dryrun=True)
             for w in written_playlists:
-                print "Would write target playlist %r\n" % w
+                print("Would write target playlist %r\n" % w)
             for s, t in playlist_failures:
-                print >> sys.stderr, \
-                    "Could not write: %r\nBecause: %r\n" % (s, t)
+                print("Could not write: %r\nBecause: %r\n" % (s, t),
+                      file=sys.stderr)
 
             if errors:
                 exitval += 4
@@ -75,35 +77,32 @@ class SynchronizationCLIBackend:
         errors = None
         for s, t in sync_tasks:
             if isinstance(t, Exception):
-                print >> sys.stderr, \
-                    "Not synced: %r\nBecause: %s\n" % (s, t)
+                print("Not synced: %r\nBecause: %s\n" % (s, t),
+                      file=sys.stderr)
                 errors = True
             else:
-                print >> sys.stderr, \
-                    "Synced: %r\nTarget: %r\n" % (s, t)
+                print("Synced: %r\nTarget: %r\n" % (s, t),
+                      file=sys.stderr)
         if errors:
             exitval += 4
 
         written_playlists, playlist_failures = self.synchronizer.synchronize_playlists()
         for p in written_playlists:
-            print >> sys.stderr, \
-                "Written: %r\n" % (p, )
+            print("Written: %r\n" % (p, ), file=sys.stderr)
         if playlist_failures:
-            print >> sys.stderr, "Problems while writing playlists:\n"
+            print("Problems while writing playlists:\n", file=sys.stderr)
             for s, t in playlist_failures:
-                print >> sys.stderr, \
-                    "Could not write: %r\nBecause: %r\n" % (s, t)
-            print >> sys.stderr
+                print("Could not write: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
+            print("", file=sys.stderr)
             exitval += 8
 
         if self.delete:
             deletion_failures = self.synchronizer.synchronize_deletions()
             if deletion_failures:
-                print >> sys.stderr, "Problems while deleting files:\n"
+                print("Problems while deleting files:\n", file=sys.stderr)
                 for s, t in deletion_failures:
-                    print >> sys.stderr, \
-                        "Could not delete: %r\nBecause: %r\n" % (s, t)
-                print >> sys.stderr
+                    print("Could not delete: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
+                print("", file=sys.stderr)
                 exitval += 8
 
         return exitval
