@@ -34,7 +34,7 @@ def parse_playlists(sources):
                 sourcedir = "/"
             else:
                 sourcedir = os.path.dirname(source)
-                source = file(source)
+                source = open(source)
             thisbatch = [
                      os.path.abspath(
                          os.path.join(sourcedir, x.strip())
