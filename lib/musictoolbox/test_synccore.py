@@ -86,7 +86,7 @@ class TestParsePlaylists(unittest.TestCase):
         files, excs = mod.parse_playlists(sources)
         self.assertEqual(files, {})
         self.assertTrue(excs[0][0], "does not exist")
-        self.assertTrue(isinstance(excs[0][1], IOError))
+        self.assertTrue(isinstance(excs[0][1], IOError), excs[0][1])
 
 
 class TestListFilesRecursively(unittest.TestCase):
