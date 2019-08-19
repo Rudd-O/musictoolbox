@@ -54,7 +54,9 @@ def list_files_recursively_fixtures():
     e = os.path.join(d, "subdir")
     os.mkdir(e)
     giles = [os.path.join(e, str(x)) for x in range(10)]
-    [ open(f, "w") for f in files + giles ]
+    for f in files + giles:
+        with open(f, "w"):
+            pass
     mtimes = [ os.stat(f).st_mtime for f in files + giles ]
     return d, files + giles, mtimes
 
