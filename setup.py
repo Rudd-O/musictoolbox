@@ -16,13 +16,13 @@ else:
 readme = open(path_to_readme).read(-1)
 
 classifiers = [
-'Development Status :: 3 - Alpha development',
+'Development Status :: 4 - Beta',
 'Environment :: Console',
 'Intended Audience :: End Users/Desktop',
 'License :: OSI Approved :: GNU General Public License (GPL)',
 'Operating System :: POSIX :: Linux',
-'Programming Language :: Python :: 2 :: Only',
-'Programming Language :: Python :: 2.7',
+'Programming Language :: Python :: 3 :: Only',
+'Programming Language :: Python :: 3.7',
 'Topic :: Utilities',
 ]
 
