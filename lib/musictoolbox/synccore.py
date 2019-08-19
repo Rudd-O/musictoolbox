@@ -747,11 +747,11 @@ class Synchronizer(object):
                     newpfl.append(l)
                 sync = True
                 try:
-                    if open(newp, "rb").read() == ''.join(newpfl):
-                        sync = False
-                except IOError as e:
-                    if e.errno != errno.ENOENT:
-                        raise
+                    with open(newp, "r") as oldpfl:
+                        if oldpfl.read() == ''.join(newpfl):
+                            sync = False
+                except FileNotFoundError:
+                    pass
                 if sync:
                     if not dryrun:
                         with open(newp, "w") as newpf:
