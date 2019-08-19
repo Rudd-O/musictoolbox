@@ -14,6 +14,7 @@ your music collection's directory structure.
 
 `syncplaylists` requires a simple INI file in your home directory (name it
 `.syncplaylists.ini`) which must say how you want things to be transcoded:
+::
 
     # cat .syncplaylists.ini
     [transcoding]
