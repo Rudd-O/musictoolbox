@@ -8,7 +8,10 @@ import iniparse
 from iniparse import INIConfig
 import os
 import subprocess
-import urllib
+try:
+    from urllib.request import pathname2url
+except ImportError:
+    from urllib import pathname2url
 
 
 class CannotTranscode(Exception):
@@ -111,9 +114,10 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
                                          src
                                          ],
                                          stderr=subprocess.STDOUT,
+                                         text=True,
                                          )
         if "Audio: mp3" in output:
-            src = "file://" + urllib.quote(src)
+            src = "file://" + pathname2url(src)
             subprocess.check_call(
                 [
                  "gst-launch-1.0",
@@ -128,7 +132,7 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
                 close_fds=True,
             )
         else:
-            src = "file://" + urllib.quote(src)
+            src = "file://" + pathname2url(src)
             subprocess.check_call(
                 [
                  "gst-launch-1.0",
@@ -156,6 +160,7 @@ class ExtractAudioTranscoder(Transcoder):
                                          src
                                          ],
                                          stderr=subprocess.STDOUT,
+                                         text=True,
                                          )
         if "Audio: mp3" in output:
             return "mp3"
@@ -190,7 +195,7 @@ class FlvMp4WebmToWavTranscoder(Transcoder):
 
     def transcode(self, src, dst):
         '''Transcode FLV / MP4 to RIFF WAVE file'''
-        src = "file://" + urllib.quote(src)
+        src = "file://" + pathname2url(src)
         subprocess.check_call(
             [
              "gst-launch-1.0",
@@ -218,7 +223,7 @@ class AudioToMp3Transcoder(Transcoder):
 
     def transcode(self, src, dst):
         '''Transcode audio file to MP3 file'''
-        src = "file://" + urllib.quote(src)
+        src = "file://" + pathname2url(src)
         subprocess.check_call(
             [
              "gst-launch-1.0",
@@ -245,7 +250,7 @@ class AudioToWavTranscoder(Transcoder):
 
     def transcode(self, src, dst):
         '''Transcode audio file to MP3 file'''
-        src = "file://" + urllib.quote(src)
+        src = "file://" + pathname2url(src)
         subprocess.check_call(
             [
              "gst-launch-1.0",
