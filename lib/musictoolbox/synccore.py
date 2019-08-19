@@ -753,13 +753,12 @@ class Synchronizer(object):
                     if e.errno != errno.ENOENT:
                         raise
                 if sync:
-                    written.append(newp)
                     if not dryrun:
-                        newpf = open(newp, "wb")
-                        newpf.writelines(newpfl)
-                        newpf.flush()
-                        newpf.close()
+                        with open(newp, "w") as newpf:
+                            newpf.writelines(newpfl)
+                            newpf.flush()
                         pf.close()
+                    written.append(newp)
             except Exception as e:
                 excs.append((newp, e))
         return written, excs
