@@ -15,16 +15,14 @@ your music collection's directory structure.
 `syncplaylists` requires a simple INI file in your home directory (name it
 `.syncplaylists.ini`) which must say how you want things to be transcoded:
 
-```
-# cat .syncplaylists.ini
-[transcoding]
-mp3=copy
-m4a=copy
-ogg=copy
-flac=copy
-*=mp3
-opus=copy
-```
+    # cat .syncplaylists.ini
+    [transcoding]
+    mp3=copy
+    m4a=copy
+    ogg=copy
+    flac=copy
+    *=mp3
+    opus=copy
 
 Once you've created the INI file, here's the quickstart version of how you
 actually *use* the tool:
