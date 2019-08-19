@@ -14,6 +14,9 @@ import textwrap
 logger = logging.getLogger(__name__)
 
 class SynchronizationCLIBackend:
+
+    debug = False
+
     def __init__(self,
                  transcoder,
                  destpath,
@@ -21,7 +24,8 @@ class SynchronizationCLIBackend:
                  dryrun,
                  concurrency,
                  delete,
-                 exclude_beneath):
+                 exclude_beneath,
+                 debug):
         self.synchronizer = Synchronizer(transcoder)
         self.synchronizer.set_target_dir(destpath)
         self.synchronizer.set_exclude_beneath(exclude_beneath or [])
@@ -29,6 +33,7 @@ class SynchronizationCLIBackend:
         self.dryrun = dryrun
         self.concurrency = concurrency
         self.delete = delete
+        self.debug = debug
 
     def run(self):
         """Returns:
@@ -40,6 +45,9 @@ class SynchronizationCLIBackend:
         Or a combination of the above.
 
         Raises Exception in an unexpected failure took place.
+
+        If self.debug == True (see __init__), raises the exceptions
+        that the transcoding / sync operations saw.
         """
         exitval = 0
         failures = self.synchronizer.scan()
@@ -79,6 +87,8 @@ class SynchronizationCLIBackend:
             if isinstance(t, Exception):
                 print("Not synced: %r\nBecause: %s\n" % (s, t),
                       file=sys.stderr)
+                if self.debug:
+                    raise t
                 errors = True
             else:
                 print("Synced: %r\nTarget: %r\n" % (s, t),
@@ -92,6 +102,8 @@ class SynchronizationCLIBackend:
         if playlist_failures:
             print("Problems while writing playlists:\n", file=sys.stderr)
             for s, t in playlist_failures:
+                if self.debug:
+                    raise t
                 print("Could not write: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
             print("", file=sys.stderr)
             exitval += 8
@@ -101,6 +113,8 @@ class SynchronizationCLIBackend:
             if deletion_failures:
                 print("Problems while deleting files:\n", file=sys.stderr)
                 for s, t in deletion_failures:
+                    if self.debug:
+                        raise t
                     print("Could not delete: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
                 print("", file=sys.stderr)
                 exitval += 8
@@ -108,7 +122,7 @@ class SynchronizationCLIBackend:
         return exitval
 
 
-def run_sync(dryrun, destpath, playlists, concurrency, delete, exclude_beneath):
+def run_sync(dryrun, destpath, playlists, concurrency, delete, exclude_beneath, debug):
     """Runs sync process.  Returns what SynchronizatoinCLIBackend.run() does."""
     transcoder = the_transcoder()
     w = SynchronizationCLIBackend(transcoder,
@@ -117,7 +131,8 @@ def run_sync(dryrun, destpath, playlists, concurrency, delete, exclude_beneath):
                                   dryrun,
                                   concurrency,
                                   delete,
-                                  exclude_beneath)
+                                  exclude_beneath,
+                                  debug)
     return w.run()
 
 
@@ -180,6 +195,7 @@ get copied as per the `copy` action specified in the configuration file.
     )
     parser.add_argument("-n", "--dry-run", dest="dryrun", action="store_true", help="do nothing except show what will happen [default: %(default)s]")
     parser.add_argument("-d", "--delete", dest="delete", action="store_true", help="remove all files that are not mentioned in the playlists [default: %(default)s]")
+    parser.add_argument("-D", "--debug", dest="debug", action="store_true", help="raise exceptions instead of reporting them in a succinct manner [default: %(default)s]")
     parser.add_argument("-e", "--exclude", dest="exclude", action="append", help="ignore all files underneath these paths or that match the specific path [default: %(default)s]")
     parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
     parser.add_argument("-c", "--concurrency", metavar="NUMPROCS", dest="concurrency", type=int, default=4, help="number of concurrent processes to run [default: %(default)s]")
@@ -211,6 +227,7 @@ def main(argv=None):
         destpath=args.destpath,
         delete=args.delete,
         exclude_beneath=args.exclude,
+        debug=args.debug,
     )
 
 

@@ -5,10 +5,9 @@ Created on Aug 11, 2012
 '''
 
 import collections
-import errno
 import logging
 import os
-import signal
+import signal as _
 from threading import Thread, Lock
 from queue import Queue, PriorityQueue
 import musictoolbox.old
@@ -58,7 +57,7 @@ def scan_mtimes(filelist):
     '''
     def mtimeorexc(x):
         try:
-            return os.stat(f).st_mtime
+            return os.stat(x).st_mtime
         except Exception as e:
             return e
 
@@ -153,7 +152,7 @@ def fatcompare(s, t):
 def compute_synchronization(
     sources, sourcedir,
     targets, targetdir,
-    path_mapper=lambda x, y: x,
+    path_mapper=lambda x, unused_y: x,
     time_comparator=lambda x, y: 1 if x > y else 0 if x == y else -1,
     unconditional=False,
     exclude_beneath=None,
@@ -320,7 +319,7 @@ class SynchronizerSlave(Thread):
         except BaseException:
             try:
                 os.rmdir(target_dir)
-            except Exception:
+            except FileNotFoundError:
                 pass
             raise
 
@@ -331,7 +330,7 @@ class SynchronizerSlave(Thread):
         except BaseException:
             try:
                 os.unlink(tempdest)
-            except Exception:
+            except FileNotFoundError:
                 pass
             raise
         if (os.stat(tempdest).st_size == 0
@@ -339,7 +338,7 @@ class SynchronizerSlave(Thread):
             os.stat(s).st_size != 0):
             os.unlink(tempdest)
             raise AssertionError("we expected the transcoded file to be "
-                                   "larger than 0 bytes")
+                                 "larger than 0 bytes")
         if newext is not None:
             dpath, _ = os.path.splitext(d)
             d = dpath + "." + newext
