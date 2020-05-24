@@ -8,4 +8,4 @@ Created on Aug 11, 2012
 
 from musictoolbox.old import *
 
-__version__ = "0.0.45"
+__version__ = "0.0.46"
