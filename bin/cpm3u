@@ -46,5 +46,14 @@ for in_file in args.IN:
                 line = relline
             new.append(line + ("\n" if has_newline else ""))
 
-    with open(out_file, "w") as out_:
-        out_.write("".join(new))
+    try:
+        with open(out_file, "r") as out_orig:
+            orig_text = out_orig.read()
+    except Exception:
+        orig_text = ""
+
+    new_text = "".join(new)
+
+    if new_text != orig_text:
+        with open(out_file, "w") as out_:
+            out_.write(new_text)
