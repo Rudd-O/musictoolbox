@@ -1,6 +1,7 @@
 """
 Transcoders!
 """
+import glob
 import logging
 import os
 import shutil
@@ -35,8 +36,29 @@ def run(cmd):
     )
 
 
-def gst(src, dst, *elements):
-    cmd = ["gst-launch-1.0", "-f"]
+_gst_command = None
+
+
+def gst(src,dst,*elements, force_gst_command=None):
+    if force_gst_command:
+        prog = force_gst_command
+    else:
+        global _gst_command
+        if _gst_command is None:
+            prog = "gst-launch-1.0"
+            for p in os.environ.get("PATH", "").split(os.path.pathsep):
+                opts = glob.glob(os.path.join(glob.escape(p), "gst-launch*"))
+                for opt in opts:
+                    if os.access(opt, os.X_OK):
+                        prog = opt
+                        break
+                else:
+                    continue
+                break
+            _gst_command = prog
+        prog = _gst_command
+
+    cmd = [prog, "-f"]
     cmd += ["giosrc", "location=%s" % src]
     for element in elements:
         cmd.append("!")

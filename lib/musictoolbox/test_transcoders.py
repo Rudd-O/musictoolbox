@@ -6,7 +6,7 @@ import musictoolbox.transcoders as mod
 
 class TestGst(unittest.TestCase):
     def test_same_pipeline_as_before(self):
-        src, dst = "a", "b"
+        src, dst, f = "a", "b", "gst-launch-1.0"
         in_ = [
             "decodebin",
             "audioconvert",
@@ -14,7 +14,7 @@ class TestGst(unittest.TestCase):
             "wavenc",
         ]
         exp_ = [
-            "gst-launch-1.0",
+            f,
             "-f",
             "giosrc",
             "location=%s" % src,
@@ -30,10 +30,10 @@ class TestGst(unittest.TestCase):
             "filesink",
             "location=%s" % dst,
         ]
-        self.assertListEqual(exp_, mod.gst(src, dst, *in_))
+        self.assertListEqual(exp_, mod.gst(src, dst, *in_, force_gst_command=f))
 
     def test_element_with_parameters(self):
-        src, dst = "a", "b"
+        src, dst, f = "a", "b", "gst-launch-1.0"
         in_ = [
             "decodebin",
             "audioconvert",
@@ -45,7 +45,7 @@ class TestGst(unittest.TestCase):
             "xingmux",
         ]
         exp_ = [
-            "gst-launch-1.0",
+            f,
             "-f",
             "giosrc",
             "location=%s" % src,
@@ -63,4 +63,4 @@ class TestGst(unittest.TestCase):
             "filesink",
             "location=%s" % dst,
         ]
-        self.assertListEqual(exp_, mod.gst(src, dst, *in_))
+        self.assertListEqual(exp_, mod.gst(src, dst, *in_, force_gst_command=f))
