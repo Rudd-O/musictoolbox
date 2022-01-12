@@ -1,29 +1,42 @@
-'''
+"""
 Created on Aug 11, 2012
 
 @author: rudd-o
-'''
+"""
 
 import collections
 import logging
 import os
-import signal as _
+from queue import Queue
+import sys
 from threading import Thread, Lock
-from queue import Queue, PriorityQueue
+
 import musictoolbox.old
+
+import concurrent.futures as fut
+import signal as _
+
 
 logger = logging.getLogger(__name__)
 
 # ================== generic utility functions ================
 
+
+def delete_ignoring_notfound(f):
+    try:
+        os.unlink(f)
+    except FileNotFoundError:
+        pass
+
+
 def parse_playlists(sources):
-    '''
+    """
     Take several playlists, and return a dictionary and a list.
     This dictionary is structured as follows:
     - keys: absolute path names mentioned in the playlists
     - values: playlists where the file appeared
     The list is a sequence of (file, Exception) occurred while parsing.
-    '''
+    """
     files = {}
     excs = []
     for source in sources:
@@ -35,26 +48,27 @@ def parse_playlists(sources):
                 sourcedir = os.path.dirname(source)
                 source = open(source)
             thisbatch = [
-                     os.path.abspath(
-                         os.path.join(sourcedir, x.strip())
-                     )
-                     for x in source.readlines()
-                     if x.strip() and not x.strip().startswith("#")
+                os.path.abspath(os.path.join(sourcedir, x.strip()))
+                for x in source.readlines()
+                if x.strip() and not x.strip().startswith("#")
             ]
             for path in thisbatch:
-                if path not in files: files[path] = []
+                if path not in files:
+                    files[path] = []
                 files[path].append(sourcename)
         except Exception as e:
             excs.append((source, e))
     return files, excs
 
+
 def scan_mtimes(filelist):
-    '''Take a list of files, and yield tuples (path, mtime or Exception).
-    
+    """Take a list of files, and yield tuples (path, mtime or Exception).
+
     The dictionary value for a particular key may contain an
     exception in lieu of an mtime.  This means that scanning
     the key failed.
-    '''
+    """
+
     def mtimeorexc(x):
         try:
             return os.stat(x).st_mtime
@@ -64,46 +78,54 @@ def scan_mtimes(filelist):
     for f in filelist:
         yield f, mtimeorexc(f)
 
+
 def chunkify(longlist, nchunks):
-    return [
-          longlist[i::nchunks]
-          for i in range(nchunks)
-          if longlist[i::nchunks]
-    ]
+    return [longlist[i::nchunks] for i in range(nchunks) if longlist[i::nchunks]]
+
 
 def merge_dicts(d):
-    '''take a list of dicts and merge it into a single dict'''
+    """take a list of dicts and merge it into a single dict"""
     r = {}
     list(map(r.update, d))
     return r
 
+
 def get_deferredlist_return_column(x):
-    '''take a table of deferredlist's (result, return) outputs and return
-    only the return column.'''
-    if x: return list(zip(*x))[1]
+    """take a table of deferredlist's (result, return) outputs and return
+    only the return column."""
+    if x:
+        return list(zip(*x))[1]
     return x
+
 
 def assert_deferredlist_succeeded(result):
     if result:
-        assert all(x is True for x in zip(*result)[0]), "deferredlist failed: %r" % result
+        assert all(x is True for x in zip(*result)[0]), (
+            "deferredlist failed: %r" % result
+        )
     return result
 
+
 def list_files_recursively(directory):
-    '''Return a list of absolute paths from recursively listing a directory'''
+    """Return a list of absolute paths from recursively listing a directory"""
     return [
-            os.path.abspath(os.path.join(base, f))
-            for base, _, files in os.walk(directory)
-            for f in files
-            ]
+        os.path.abspath(os.path.join(base, f))
+        for base, _, files in os.walk(directory)
+        for f in files
+    ]
+
 
 def vfatprotect(f):
-    for illegal in '?<>\\:*|"^': f = f.replace(illegal, "_")
-    while "./" in f: f = f.replace("./", "/")
-    while " /" in f: f = f.replace(" /", "/")
+    for illegal in '?<>\\:*|"^':
+        f = f.replace(illegal, "_")
+    while "./" in f:
+        f = f.replace("./", "/")
+    while " /" in f:
+        f = f.replace(" /", "/")
     return f
 
-class VFATMapper(object):
 
+class VFATMapper(object):
     def __init__(self, extant_paths, extension_transmogrifier=None):
         """The mapper takes a list of existent paths on the target, rooted
         on the same directory passed to map(path, ...) and an optional extension
@@ -111,8 +133,9 @@ class VFATMapper(object):
         for the case when the file gets transcoded."""
         # extension_transmogrifier takes the original path passed to map()
         # and returns the tentative new extension with the leading dot included
-        self.paths_seen = dict(list(zip((x.lower() for x in extant_paths),
-                                   extant_paths)))
+        self.paths_seen = dict(
+            list(zip((x.lower() for x in extant_paths), extant_paths))
+        )
         self.extension_transmogrifier = extension_transmogrifier
 
     def map(self, path, originalpath):
@@ -143,21 +166,27 @@ class VFATMapper(object):
             path = self.paths_seen[path.lower()]
         return path
 
+
 def fatcompare(s, t):
     x = int(s) - int(t)
-    if x >= 2: return 1
-    elif x <= -2: return -1
+    if x >= 2:
+        return 1
+    elif x <= -2:
+        return -1
     return 0
 
+
 def compute_synchronization(
-    sources, sourcedir,
-    targets, targetdir,
+    sources,
+    sourcedir,
+    targets,
+    targetdir,
     path_mapper=lambda x, unused_y: x,
     time_comparator=lambda x, y: 1 if x > y else 0 if x == y else -1,
     unconditional=False,
     exclude_beneath=None,
-    ):
-    '''
+):
+    """
     Compute a synchronization schedule based on a dictionary of
     {source_filename:mtime} and a dictionary of {target_filename:mtime}.
     Paths must be absolute or the behavior of this function is undefined.
@@ -183,7 +212,7 @@ def compute_synchronization(
     first parameter, and the target mtime as the second parameter.
     FAT file system users may want to pass a custom comparator that takes
     into consideration the time resolution of FAT32 file systems
-    (greater than 2 seconds). 
+    (greater than 2 seconds).
 
     Return four values in a tuple:
         1. A dictionary {s:t} where s is the source file name, and
@@ -193,36 +222,38 @@ def compute_synchronization(
         3. A dictionary {s:e} of files that will be skipped, with their
            corresponding would-be targets that already were transferred,
         4. A list of files that will be deleted from the destination.
-    '''
+    """
     if exclude_beneath is None:
         exclude_beneath = []
     exclude_beneath = [os.path.abspath(p) for p in exclude_beneath]
-    wont_transfer = dict([
-        (k, v) for k, v in list(sources.items())
-        if isinstance(v, Exception)
-    ])
-    source_mtimes = dict([
-        (k, v) for k, v in list(sources.items())
-        if not isinstance(v, Exception)
-    ])
+    wont_transfer = dict(
+        [(k, v) for k, v in list(sources.items()) if isinstance(v, Exception)]
+    )
+    source_mtimes = dict(
+        [(k, v) for k, v in list(sources.items()) if not isinstance(v, Exception)]
+    )
     source_files = list(source_mtimes.keys())
     source_basedir = sourcedir
     target_mtimes = targets
     target_files = list(target_mtimes.keys())
     target_basedir = os.path.abspath(targetdir)
 
-    test = source_basedir + os.path.sep \
-           if source_basedir[-len(os.path.sep)] != os.path.sep \
-           else source_basedir
+    test = (
+        source_basedir + os.path.sep
+        if source_basedir[-len(os.path.sep)] != os.path.sep
+        else source_basedir
+    )
     for k in source_files:
         if not k.startswith(test):
             raise ValueError(
                 "source path %r not within source dir %r" % (k, source_basedir)
             )
 
-    test = target_basedir + os.path.sep \
-           if target_basedir[-len(os.path.sep)] != os.path.sep \
-           else target_basedir
+    test = (
+        target_basedir + os.path.sep
+        if target_basedir[-len(os.path.sep)] != os.path.sep
+        else target_basedir
+    )
     for k in target_files:
         if not k.startswith(test):
             raise ValueError(
@@ -234,9 +265,7 @@ def compute_synchronization(
     for p in source_files:
         try:
             mapped_target_file = os.path.join(
-                target_basedir, path_mapper(
-                    os.path.relpath(p, start=source_basedir), p
-                )
+                target_basedir, path_mapper(os.path.relpath(p, start=source_basedir), p)
             )
             desired_target_files[mapped_target_file] = mapped_target_file
             new_source_files.append(p)
@@ -247,27 +276,40 @@ def compute_synchronization(
     # desired target to original source map
     dt2s_map = list(zip(source_files, list(desired_target_files.keys())))
     map_of_transfer = [
-         (s,
-          t,
-          t not in target_files
-          or time_comparator(source_mtimes[s], target_mtimes[t]) > 0
-          or unconditional
-          ) for s, t in dt2s_map
+        (
+            s,
+            t,
+            t not in target_files
+            or time_comparator(source_mtimes[s], target_mtimes[t]) > 0
+            or unconditional,
+        )
+        for s, t in dt2s_map
     ]
-    need_to_transfer = dict([
-        (s, t) for s, t, transfer in map_of_transfer
-        if transfer and
-        not any((t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath)
-    ])
-    skipping_transfer = dict([
-        (s, t) for s, t, transfer in map_of_transfer
-        if not transfer and
-        not any((t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath)
-    ])
+    need_to_transfer = dict(
+        [
+            (s, t)
+            for s, t, transfer in map_of_transfer
+            if transfer
+            and not any(
+                (t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath
+            )
+        ]
+    )
+    skipping_transfer = dict(
+        [
+            (s, t)
+            for s, t, transfer in map_of_transfer
+            if not transfer
+            and not any(
+                (t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath
+            )
+        ]
+    )
     deleting = [
-        t for t in target_files
-        if t not in desired_target_files and
-        not any((t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath)
+        t
+        for t in target_files
+        if t not in desired_target_files
+        and not any((t.startswith(x + os.path.sep) or t == x) for x in exclude_beneath)
     ]
 
     return need_to_transfer, wont_transfer, skipping_transfer, deleting
@@ -284,36 +326,22 @@ def ensure_directories_exist(dirs):
             if not os.path.exists(t):
                 os.makedirs(t)
 
-#==================================================================
+
+# ==================================================================
 
 
-#===================== synchronizer code ==========================
+# ===================== synchronizer code ==========================
 
-class SynchronizerSlave(Thread):
-    def __init__(self, inqueue, outqueue, transcoder, postprocessor):
-        Thread.__init__(self)
-        self.inqueue = inqueue
-        self.outqueue = outqueue
+
+class SynchronizerSlave(object):
+    def __init__(self, transcoder, postprocessor):
         self.transcoder = transcoder
         self.postprocessor = postprocessor
 
-    def run(self):
-        while True:
-            item = self.inqueue.get()
-            unused_prio, (src, dst) = item
-            if src is None:
-                break
-            try:
-                self._synchronize_wrapper(src, dst)
-                self.outqueue.put((src, dst))
-            except BaseException as e:
-                self.outqueue.put((src, e))
-
-    def _synchronize_wrapper(self, s, d):
+    def sync(self, s, d):
         # adapt the transcoder interface to return the source file
         # because the transcoder returns old and new formats
-        target_dir, target_file = os.path.dirname(d), os.path.basename(d)
-        tempf = 'tmp-' + target_file
+        target_dir = os.path.dirname(d)
         try:
             ensure_directories_exist([target_dir])
         except BaseException:
@@ -323,30 +351,9 @@ class SynchronizerSlave(Thread):
                 pass
             raise
 
-        tempdest = os.path.join(target_dir, tempf)
-        try:
-            newext = self.transcoder.transcode(s, tempdest)
-            self.postprocessor(s, tempdest, target_format=newext)
-        except BaseException:
-            try:
-                os.unlink(tempdest)
-            except FileNotFoundError:
-                pass
-            raise
-        if (os.stat(tempdest).st_size == 0
-            and
-            os.stat(s).st_size != 0):
-            os.unlink(tempdest)
-            raise AssertionError("we expected the transcoded file to be "
-                                 "larger than 0 bytes")
-        if newext is not None:
-            dpath, _ = os.path.splitext(d)
-            d = dpath + "." + newext
-        os.rename(tempdest, d)
+        newext = self.transcoder.transcode(s, d)
+        self.postprocessor(s, d, target_format=newext)
         return d
-
-    def stop(self):
-        self.stopped = True
 
 
 class Synchronizer(object):
@@ -358,37 +365,37 @@ class Synchronizer(object):
     source_files_mtimes = None
 
     _target_files = None
+
     def _get_target_files(self):
         return self._target_files
+
     def _set_target_files(self, target_files):
         self._target_files = target_files
-    target_files = property(
-                            _get_target_files,
-                            _set_target_files
-                            )
+
+    target_files = property(_get_target_files, _set_target_files)
 
     _target_files_mtimes = None
+
     def _get_target_files_mtimes(self):
         return self._target_files_mtimes
+
     def _set_target_files_mtimes(self, target_files_mtimes):
         # since test code manually sets the files_mtimes without setting
         # the files list, we refresh the files list using the keys
         # of this lookup
         self._target_files_mtimes = target_files_mtimes
         self.target_files = list(target_files_mtimes.keys())
-    target_files_mtimes = property(
-                                   _get_target_files_mtimes,
-                                   _set_target_files_mtimes
-                                   )
+
+    target_files_mtimes = property(_get_target_files_mtimes, _set_target_files_mtimes)
 
     def __init__(self, transcoder):
-        '''
+        """
         Class instance initializer.
 
         transcoder must be a Transcoder instance that Synchronizer
         can query to determine the target formats available and what
         formats the files will be transcoded to.
-        '''
+        """
         self.playlists = []
         self.target_dir = None
         self.source_files = {}
@@ -405,7 +412,7 @@ class Synchronizer(object):
         return os.path.join(self.target_dir, "Playlists")
 
     def set_transcoder(self, transcoder):
-        '''Change to a different transcoder'''
+        """Change to a different transcoder"""
         self.transcoder = transcoder
         self.scan_done = False
 
@@ -431,30 +438,25 @@ class Synchronizer(object):
 
         logger.info("Parsing %s playlists", len(self.playlists))
         excs.extend(self._parse_playlists())
-        logger.info("Discovered %s source files",
-                    len(self.source_files))
+        logger.info("Discovered %s source files", len(self.source_files))
 
         logger.info("Scanning target directory %s", self.target_dir)
         excs.extend(self._scan_target_dir())
         logger.info("Discovered %s target files", len(self.target_files))
 
-        logger.info("Scanning %s source files mtimes",
-                    len(self.source_files))
+        logger.info("Scanning %s source files mtimes", len(self.source_files))
         excs.extend(self._scan_source_files_mtimes())
-        logger.info("Scanned %s source files mtimes",
-                    len(self.source_files_mtimes))
+        logger.info("Scanned %s source files mtimes", len(self.source_files_mtimes))
 
-        logger.info("Scanning %s target files mtimes",
-                    len(self.target_files))
+        logger.info("Scanning %s target files mtimes", len(self.target_files))
         excs.extend(self._scan_target_dir_mtimes())
-        logger.info("Scanned %s target files mtimes",
-                    len(self.target_files_mtimes))
+        logger.info("Scanned %s target files mtimes", len(self.target_files_mtimes))
 
         self.scan_done = True
         return excs
 
     def _parse_playlists(self):
-        '''
+        """
         scan the playlists known to the synchronizer and obtain a list
         of files.
 
@@ -466,18 +468,18 @@ class Synchronizer(object):
         add_playlist(), but it will produce no result.
 
         This operation blocks.
-        '''
+        """
         self.source_files, excs = parse_playlists(self.playlists)
         return excs
 
     def __generic_scan_mtimes_of_file_list(self, filenames):
-        '''
+        """
         scan files in file_list for their modification
         times. do the scan in parallel for maximum performance.
         Returns dictionary {filename: mtime or Exception}.
-        
+
         This operation blocks.
-        '''
+        """
         chunks = chunkify(filenames, 8)
         # FIXME TODO hardcoded 8
 
@@ -486,14 +488,15 @@ class Synchronizer(object):
                 Thread.__init__(self)
                 self.queue = queue
                 self.files = files
+
             def run(self):
                 for ret in scan_mtimes(self.files):
                     self.queue.put(ret)
                 self.queue.put(None)
 
         queue = Queue()
-        threads = [ MtimeScanner(queue, c) for c in chunks ]
-        [ t.start() for t in threads ]
+        threads = [MtimeScanner(queue, c) for c in chunks]
+        [t.start() for t in threads]
         donecount = 0
         resultdict = {}
         while donecount < len(chunks):
@@ -502,42 +505,45 @@ class Synchronizer(object):
                 donecount += 1
             else:
                 resultdict[val[0]] = val[1]
-        [ t.join() for t in threads ]
+        [t.join() for t in threads]
         return resultdict
 
     def _scan_source_files_mtimes(self):
-        '''
+        """
         scan all the files in source_files for their modification
         times. do the scan in parallel for maximum performance.
-        
+
         this function must be called after self.parse_playlists()
-        
+
         when done, update self.source_files_mtimes with the modification
-        times of all files in self.source_files. 
-        
+        times of all files in self.source_files.
+
         It is not an error to call this method before having used
         scan_source_files(), but it will produce no result.
-        
+
         This operation blocks.
-        '''
+        """
         filenames = list(self.source_files.keys())
         files_mtimes = self.__generic_scan_mtimes_of_file_list(filenames)
         self.source_files_mtimes = files_mtimes
-        return [ x for x in list(self.source_files_mtimes.items())
-                if isinstance(x[1], Exception) ]
+        return [
+            x
+            for x in list(self.source_files_mtimes.items())
+            if isinstance(x[1], Exception)
+        ]
 
     def _scan_target_dir(self):
-        '''
+        """
         scan the target dir known to the synchronizer.  the scan is
         done in a serialized manner.
-        
+
         when done, update self.target_files with a list of all known files
         in self.target_dir.
-        
+
         It is an error to call this method before set_target_dir()
-        
+
         This operation blocks.
-        '''
+        """
         try:
             d = list_files_recursively(self.target_dir)
             self.target_files = d
@@ -546,28 +552,31 @@ class Synchronizer(object):
             return [(self.target_dir, e)]
 
     def _scan_target_dir_mtimes(self):
-        '''
+        """
         scan all the files in target_files for their modification
         times. do the scan in parallel for maximum performance.
-        
+
         this function must be called after self.scan_target_dir()
-        
+
         when done, update self.target_files_mtimes with the modification
-        times of all files in self.target_files. 
-        
+        times of all files in self.target_files.
+
         It is not an error to call this method before having used
         scan_target_dir(), but it will produce no result.
-        
+
         This operation blocks.
-        '''
+        """
         filenames = self.target_files
         files_mtimes = self.__generic_scan_mtimes_of_file_list(filenames)
         self.target_files_mtimes = files_mtimes
-        return [ x for x in list(self.target_files_mtimes.items())
-                if isinstance(x[1], Exception) ]
+        return [
+            x
+            for x in list(self.target_files_mtimes.items())
+            if isinstance(x[1], Exception)
+        ]
 
     def compute_synchronization(self, unconditional=False):
-        '''Computes synchronization between sources and target.
+        """Computes synchronization between sources and target.
 
         You must have already parsed the playlists, scanned the target
         directory, and scanned the mtimes of all sources and targets.
@@ -584,7 +593,7 @@ class Synchronizer(object):
         This function has a preference for FAT32 target file systems. In
         an ideal world, it would detect the file system capabilities of
         the target file system.
-        '''
+        """
         assert self.scan_done, "programming error: must scan first"
 
         # let's generate the source basedir
@@ -599,14 +608,18 @@ class Synchronizer(object):
         if self.compute_sync_cache:
             return self.compute_sync_cache
 
-        source_basedir = os.path.commonprefix([
-            k for k, v in list(self.source_files_mtimes.items())
-            if not isinstance(v, Exception)
-        ])
+        source_basedir = os.path.commonprefix(
+            [
+                k
+                for k, v in list(self.source_files_mtimes.items())
+                if not isinstance(v, Exception)
+            ]
+        )
 
         while source_basedir and source_basedir[-1] != os.path.sep:
-            source_basedir = source_basedir[:-len(os.path.sep)]
-        if not source_basedir: source_basedir = os.path.sep
+            source_basedir = source_basedir[: -len(os.path.sep)]
+        if not source_basedir:
+            source_basedir = os.path.sep
 
         # now we filter source files according to whether they can
         # be transcoded or not, since we won't be transferring the ones
@@ -627,11 +640,13 @@ class Synchronizer(object):
             else:
                 return ""
 
-        mapper = VFATMapper([os.path.relpath(
-                                x,
-                                self.target_dir
-                            ) for x in list(self.target_files_mtimes.keys())],
-                            extension_transmogrifier)
+        mapper = VFATMapper(
+            [
+                os.path.relpath(x, self.target_dir)
+                for x in list(self.target_files_mtimes.keys())
+            ],
+            extension_transmogrifier,
+        )
 
         def comparer(s, t):
             return fatcompare(s, t)
@@ -649,7 +664,7 @@ class Synchronizer(object):
         return self.compute_sync_cache
 
     def synchronize(self, concurrency=1):
-        '''
+        """
         Computes synchronization between sources and target, then
         gets ready to sync using a thread pool, dispatching tasks to it.
         The start of the sync process happens immediately.
@@ -658,43 +673,77 @@ class Synchronizer(object):
         for the self.compute_synchronization function. You must wait until
         a synchronization is done to synchronize again.
 
-        This function blocks.  As it processes files in its plan, it returns
-        a tuple (source_file:destination_file or Exception).
-        '''
-        inqueue = PriorityQueue()
-        outqueue = PriorityQueue()
-        will_sync, _, _, _ = self.compute_synchronization()
-        if not list(will_sync.items()):
-            return
+        This function blocks.  As it processes files in its plan, it yields
+        a tuple (source_file:destination_file or Exception) for each one.
+        """
+        will_sync, wont_sync, _, _ = self.compute_synchronization()
 
-        threads = [SynchronizerSlave(inqueue,
-                                     outqueue,
-                                     self.transcoder,
-                                     musictoolbox.old.transfer_tags)
-                   for _ in range(concurrency)]
-        [ t.start() for t in threads ]
-        logger.info("Synchronizing with %s threads for %s work items",
-                    len(threads), len(list(will_sync.items())))
+        # First, yield those that we know won't be synced.
+        for s, e in wont_sync.items():
+            yield s, e
 
+        logger.info(
+            "Synchronizing with %s threads for %s work items",
+            concurrency,
+            len(will_sync),
+        )
+
+        slave = SynchronizerSlave(self.transcoder, musictoolbox.old.transfer_tags)
+
+        def tmpf(fn):
+            # FIXME: use PC_NAME_MAX and PC_PATH_MAX also in the filesystem
+            # mapper code -- we are not doing that at the moment.
+            directory = os.path.dirname(fn)
+            filename = os.path.basename(fn)
+            tmpfilename = ".tmp-" + filename
+            pathconf_directory = os.path.abspath(directory)
+            while not os.path.isdir(pathconf_directory):
+                pathconf_directory = os.path.dirname(pathconf_directory)
+            maxfilenamelen = os.pathconf(pathconf_directory, "PC_NAME_MAX")
+            if len(tmpfilename.encode(sys.getfilesystemencoding())) > maxfilenamelen:
+                tmpfilename = tmpfilename.encode(sys.getfilesystemencoding())
+                tmpfilename = tmpfilename[:maxfilenamelen]
+                tmpfilename = tmpfilename.decode(sys.getfilesystemencoding())
+            return os.path.join(directory, tmpfilename)
+
+        series = set((s, tmpf(d), d) for s, d in will_sync.items())
         try:
-            for s, t in list(will_sync.items()):
-                inqueue.put((0, (s, t)))
-            for _ in range(concurrency):
-                inqueue.put((1, (None, None)))
-            outs = 0
-            while outs < len(will_sync):
-                val = outqueue.get()
-                outs = outs + 1
-                yield val
+            with fut.ThreadPoolExecutor(max_workers=concurrency) as executor:
+                future_to_url = {
+                    executor.submit(slave.sync, s, tmpd): (s, tmpd, d)
+                    for s, tmpd, d in series
+                }
+                for future in fut.as_completed(future_to_url):
+                    item = future_to_url[future]
+                    s, tmpd, d = item
+                    try:
+                        future.result()
+                    except BaseException as e:
+                        d = e
+                    if isinstance(d, BaseException):
+                        delete_ignoring_notfound(tmpd)
+                    elif os.stat(tmpd).st_size == 0 and os.stat(s).st_size != 0:
+                        d = AssertionError(
+                            "we expected the transcoded file to be larger than 0 bytes"
+                        )
+                        delete_ignoring_notfound(tmpd)
+                    else:
+                        try:
+                            os.rename(tmpd, d)
+                        except BaseException as e:
+                            delete_ignoring_notfound(tmpd)
+                            d = e
+                    series.remove(item)
+                    yield s, d
         finally:
-            for _ in range(concurrency):
-                inqueue.put((-1, (None, None)))
-            logger.info("Stopping and joining all %s threads", len(threads))
-            [ t.join() for t in threads ]
-            logger.info("Ended synchronization")
+            # This should be empty if everything did in fact sync,
+            # or failed to sync but was deleted eagerly earlier.
+            [delete_ignoring_notfound(tmpd) for _, tmpd, d in series]
+
+        logger.info("Ended synchronization")
 
     def synchronize_playlists(self, dryrun=False):
-        '''
+        """
         Once synchronization of files has been done, synchronization of
         playlists is possible.
 
@@ -704,7 +753,7 @@ class Synchronizer(object):
         It returns a list of (target path, Exception).
 
         This function blocks with impunity.
-        '''
+        """
         # FIXME if adding params to the following call, add them above too
         will_sync, wont_sync, skipping, _ = self.compute_synchronization(
             unconditional=True
@@ -747,7 +796,7 @@ class Synchronizer(object):
                 sync = True
                 try:
                     with open(newp, "r") as oldpfl:
-                        if oldpfl.read() == ''.join(newpfl):
+                        if oldpfl.read() == "".join(newpfl):
                             sync = False
                 except FileNotFoundError:
                     pass
@@ -763,7 +812,7 @@ class Synchronizer(object):
         return written, excs
 
     def synchronize_deletions(self, deletor=os.unlink):
-        '''
+        """
         Once synchronization of files and playlists has been done, sync
         of deletions is possible.
 
@@ -773,11 +822,9 @@ class Synchronizer(object):
         It returns a list of (target path, Exception).
 
         This function blocks with impunity.
-        '''
+        """
         # FIXME if adding params to the following call, add them above too
-        _, _, _, deleting = self.compute_synchronization(
-            unconditional=True
-        )
+        _, _, _, deleting = self.compute_synchronization(unconditional=True)
 
         excs = []
         for t in deleting:
@@ -787,4 +834,5 @@ class Synchronizer(object):
                 excs.append((t, e))
         return excs
 
-#=================== end synchronizer code ========================
+
+# =================== end synchronizer code ========================

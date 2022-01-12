@@ -1,35 +1,38 @@
 from __future__ import print_function
 
-
-import sys
-import os
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
+import logging
+import os
+import sys
+import textwrap
+
 from musictoolbox.synccore import Synchronizer
 from musictoolbox.transcoders import ConfigurableTranscoder as the_transcoder
-import logging
-import textwrap
 
 
 logger = logging.getLogger(__name__)
+
 
 class SynchronizationCLIBackend:
 
     debug = False
 
-    def __init__(self,
-                 transcoder,
-                 destpath,
-                 playlists,
-                 dryrun,
-                 concurrency,
-                 delete,
-                 exclude_beneath,
-                 debug):
+    def __init__(
+        self,
+        transcoder,
+        destpath,
+        playlists,
+        dryrun,
+        concurrency,
+        delete,
+        exclude_beneath,
+        debug,
+    ):
         self.synchronizer = Synchronizer(transcoder)
         self.synchronizer.set_target_dir(destpath)
         self.synchronizer.set_exclude_beneath(exclude_beneath or [])
-        [ self.synchronizer.add_playlist(p) for p in playlists ]
+        [self.synchronizer.add_playlist(p) for p in playlists]
         self.dryrun = dryrun
         self.concurrency = concurrency
         self.delete = delete
@@ -67,12 +70,14 @@ class SynchronizationCLIBackend:
             if self.delete:
                 for t in deleting:
                     print("Deleting: %r\n" % (t,))
-            written_playlists, playlist_failures = self.synchronizer.synchronize_playlists(dryrun=True)
+            (
+                written_playlists,
+                playlist_failures,
+            ) = self.synchronizer.synchronize_playlists(dryrun=True)
             for w in written_playlists:
                 print("Would write target playlist %r\n" % w)
             for s, t in playlist_failures:
-                print("Could not write: %r\nBecause: %r\n" % (s, t),
-                      file=sys.stderr)
+                print("Could not write: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
 
             if errors:
                 exitval += 4
@@ -85,20 +90,18 @@ class SynchronizationCLIBackend:
         errors = None
         for s, t in sync_tasks:
             if isinstance(t, Exception):
-                print("Not synced: %r\nBecause: %s\n" % (s, t),
-                      file=sys.stderr)
+                print("Not synced: %r\nBecause: %s\n" % (s, t), file=sys.stderr)
                 if self.debug:
                     raise t
                 errors = True
             else:
-                print("Synced: %r\nTarget: %r\n" % (s, t),
-                      file=sys.stderr)
+                print("Synced: %r\nTarget: %r\n" % (s, t), file=sys.stderr)
         if errors:
             exitval += 4
 
         written_playlists, playlist_failures = self.synchronizer.synchronize_playlists()
         for p in written_playlists:
-            print("Written: %r\n" % (p, ), file=sys.stderr)
+            print("Written: %r\n" % (p,), file=sys.stderr)
         if playlist_failures:
             print("Problems while writing playlists:\n", file=sys.stderr)
             for s, t in playlist_failures:
@@ -115,7 +118,9 @@ class SynchronizationCLIBackend:
                 for s, t in deletion_failures:
                     if self.debug:
                         raise t
-                    print("Could not delete: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
+                    print(
+                        "Could not delete: %r\nBecause: %r\n" % (s, t), file=sys.stderr
+                    )
                 print("", file=sys.stderr)
                 exitval += 8
 
@@ -125,23 +130,29 @@ class SynchronizationCLIBackend:
 def run_sync(dryrun, destpath, playlists, concurrency, delete, exclude_beneath, debug):
     """Runs sync process.  Returns what SynchronizatoinCLIBackend.run() does."""
     transcoder = the_transcoder()
-    w = SynchronizationCLIBackend(transcoder,
-                                  destpath,
-                                  playlists,
-                                  dryrun,
-                                  concurrency,
-                                  delete,
-                                  exclude_beneath,
-                                  debug)
+    w = SynchronizationCLIBackend(
+        transcoder,
+        destpath,
+        playlists,
+        dryrun,
+        concurrency,
+        delete,
+        exclude_beneath,
+        debug,
+    )
     return w.run()
 
 
 # cmd line stuff
 
+
 def get_parser():
     program_name = os.path.basename(sys.argv[0])
     program_shortdesc = "Synchronizes music to a directory."
-    program_shortdesc += "\n\n" + textwrap.dedent("""
+    program_shortdesc += (
+        "\n\n"
+        + textwrap.dedent(
+            """
 This program takes a number of file lists / playlists in the command line,
 and a destination directory, then synchronizes all the songs in the playlists
 to the destination directory, with optional modifications to the files and their
@@ -186,26 +197,71 @@ following configuration to the file:
 and then `syncplaylists` will do a best-effort attempt to transcode the files
 in your playlists to MP3, except for the MP3 files themselves which would just
 get copied as per the `copy` action specified in the configuration file.
-    """).strip()
+    """
+        ).strip()
+    )
 
     parser = ArgumentParser(
         prog=program_name,
         description=program_shortdesc,
-        formatter_class=RawDescriptionHelpFormatter
+        formatter_class=RawDescriptionHelpFormatter,
     )
-    parser.add_argument("-n", "--dry-run", dest="dryrun", action="store_true", help="do nothing except show what will happen [default: %(default)s]")
-    parser.add_argument("-d", "--delete", dest="delete", action="store_true", help="remove all files that are not mentioned in the playlists [default: %(default)s]")
-    parser.add_argument("-D", "--debug", dest="debug", action="store_true", help="raise exceptions instead of reporting them in a succinct manner [default: %(default)s]")
-    parser.add_argument("-e", "--exclude", dest="exclude", action="append", help="ignore all files underneath these paths or that match the specific path [default: %(default)s]")
-    parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
-    parser.add_argument("-c", "--concurrency", metavar="NUMPROCS", dest="concurrency", type=int, default=4, help="number of concurrent processes to run [default: %(default)s]")
-    parser.add_argument(dest="playlists", help="paths to M3U playlists to synchronize", metavar="playlist", nargs='+')
+    parser.add_argument(
+        "-n",
+        "--dry-run",
+        dest="dryrun",
+        action="store_true",
+        help="do nothing except show what will happen [default: %(default)s]",
+    )
+    parser.add_argument(
+        "-d",
+        "--delete",
+        dest="delete",
+        action="store_true",
+        help="remove all files that are not mentioned in the playlists [default: %(default)s]",
+    )
+    parser.add_argument(
+        "-D",
+        "--debug",
+        dest="debug",
+        action="store_true",
+        help="raise exceptions instead of reporting them in a succinct manner [default: %(default)s]",
+    )
+    parser.add_argument(
+        "-e",
+        "--exclude",
+        dest="exclude",
+        action="append",
+        help="ignore all files underneath these paths or that match the specific path [default: %(default)s]",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        dest="verbose",
+        action="count",
+        help="set verbosity level [default: %(default)s]",
+    )
+    parser.add_argument(
+        "-c",
+        "--concurrency",
+        metavar="NUMPROCS",
+        dest="concurrency",
+        type=int,
+        default=4,
+        help="number of concurrent processes to run [default: %(default)s]",
+    )
+    parser.add_argument(
+        dest="playlists",
+        help="paths to M3U playlists to synchronize",
+        metavar="playlist",
+        nargs="+",
+    )
     parser.add_argument(dest="destpath", help="destination directory", metavar="dir")
     return parser
 
 
 def main(argv=None):
-    '''Command line options.'''
+    """Command line options."""
 
     if argv is None:
         argv = sys.argv

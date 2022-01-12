@@ -1,45 +1,54 @@
-'''
+"""
 Created on Aug 11, 2012
 
 @author: rudd-o
-'''
+"""
 
+import os
+import shutil
+import tempfile
 import unittest
+
+from musictoolbox import transcoders
+
+import musictoolbox.synccore as mod
+
 try:
     from io import StringIO
 except ImportError:
     from io import StringIO
-import tempfile
-import os
-import musictoolbox.synccore as mod
-import shutil
-from musictoolbox import transcoders
 
 # FIXME: test musictoolbox.synccli
 
+
 def synthetic_playlists_fixtures():
     p1, p2 = StringIO(), StringIO()
-    p1.write('''
+    p1.write(
+        """
     #test playlist
     /home/rudd-o/mp3.mp3
     home/rudd-o/wav.mp3
-    ''')
-    p2.write('''
+    """
+    )
+    p2.write(
+        """
     #test playlist 2
     /home/rudd-o/playlist2.mp3
     /home/rudd-o/wav.mp3
-    ''')
+    """
+    )
 
     p1.seek(0)
     p2.seek(0)
 
     output = {
-              "/home/rudd-o/mp3.mp3":[p1],
-              "/home/rudd-o/wav.mp3":[p1, p2],
-              "/home/rudd-o/playlist2.mp3":[p2],
-              }
+        "/home/rudd-o/mp3.mp3": [p1],
+        "/home/rudd-o/wav.mp3": [p1, p2],
+        "/home/rudd-o/playlist2.mp3": [p2],
+    }
 
     return [p1, p2], output
+
 
 def mtimes_fixtures():
     t1 = tempfile.NamedTemporaryFile()
@@ -47,6 +56,7 @@ def mtimes_fixtures():
     mt1 = os.stat(t1.name).st_mtime
     mt2 = os.stat(t2.name).st_mtime
     return [t1, t2], [mt1, mt2]
+
 
 def list_files_recursively_fixtures():
     d = tempfile.mkdtemp()
@@ -57,26 +67,25 @@ def list_files_recursively_fixtures():
     for f in files + giles:
         with open(f, "w"):
             pass
-    mtimes = [ os.stat(f).st_mtime for f in files + giles ]
+    mtimes = [os.stat(f).st_mtime for f in files + giles]
     return d, files + giles, mtimes
 
 
 class DummyTranscoder(transcoders.Transcoder):
-
     def would_transcode_to(self, from_):
-        if from_ == "mp3": return "mp3"
+        if from_ == "mp3":
+            return "mp3"
         raise transcoders.CannotTranscode(from_)
 
 
 class DummyOggToMp3Transcoder(transcoders.Transcoder):
-
     def would_transcode_to(self, from_):
-        if from_ in ["mp3", "ogg"]: return "mp3"
+        if from_ in ["mp3", "ogg"]:
+            return "mp3"
         raise transcoders.CannotTranscode(from_)
 
 
 class TestParsePlaylists(unittest.TestCase):
-
     def test_synthetic_playlists(self):
         sources, output = synthetic_playlists_fixtures()
         files, excs = mod.parse_playlists(sources)
@@ -92,7 +101,6 @@ class TestParsePlaylists(unittest.TestCase):
 
 
 class TestListFilesRecursively(unittest.TestCase):
-
     def test_simple_case(self):
         d, files, _ = list_files_recursively_fixtures()
         listed_files = mod.list_files_recursively(d)
@@ -102,7 +110,6 @@ class TestListFilesRecursively(unittest.TestCase):
 
 
 class TestScanMtimes(unittest.TestCase):
-
     def test_mtimes(self):
         f, t = mtimes_fixtures()
         result = list(mod.scan_mtimes([x.name for x in f]))
@@ -112,7 +119,6 @@ class TestScanMtimes(unittest.TestCase):
 
 
 class TestVfatProtect(unittest.TestCase):
-
     def test_noendingdots(self):
         p = mod.vfatprotect("/some/path/with./dots")
         self.assertNotIn(".", p)
@@ -122,116 +128,85 @@ class TestVfatProtect(unittest.TestCase):
         self.assertNotIn(" /", p)
 
     def test_nobadchars(self):
-        for f in '?<>\\:*|':
+        for f in "?<>\\:*|":
             p = mod.vfatprotect("/path/with%sbadchar" % f)
             self.assertNotIn(f, p)
 
-class TestComputeSynchronization(unittest.TestCase):
 
+class TestComputeSynchronization(unittest.TestCase):
     def test_simple_case(self):
         m = mod.compute_synchronization({}, "/", {}, "/")
         self.assertEqual(m, ({}, {}, {}, []))
 
     def test_identical(self):
-        m = mod.compute_synchronization(
-            {"/a":1},
-            "/",
-            {"/target/a":1},
-            "/target")
+        m = mod.compute_synchronization({"/a": 1}, "/", {"/target/a": 1}, "/target")
         self.assertEqual(m[0], {})
 
     def test_older(self):
-        m = mod.compute_synchronization(
-            {"/a":1},
-            "/",
-            {"/target/a":0},
-            "/target")
+        m = mod.compute_synchronization({"/a": 1}, "/", {"/target/a": 0}, "/target")
         self.assertEqual(m[0], {"/a": "/target/a"})
 
     def test_absent_target(self):
-        m = mod.compute_synchronization(
-            {"/a":1},
-            "/",
-            {},
-            "/target")
+        m = mod.compute_synchronization({"/a": 1}, "/", {}, "/target")
         self.assertEqual(m[0], {"/a": "/target/a"})
 
     def test_absent_source(self):
-        m = mod.compute_synchronization(
-            {},
-            "/",
-            {},
-            "/target")
+        m = mod.compute_synchronization({}, "/", {}, "/target")
         self.assertEqual(m[0], {})
 
     def test_mapper(self):
         mapper = lambda x, y: x.replace("a", "b")
         m = mod.compute_synchronization(
-            {"/a":1},
-            "/",
-            {"/target/b":1},
-            "/target",
-            path_mapper=mapper)
+            {"/a": 1}, "/", {"/target/b": 1}, "/target", path_mapper=mapper
+        )
         self.assertEqual(m[0], {})
         m = mod.compute_synchronization(
-            {"/a":1},
-            "/",
-            {"/target/b":0},
-            "/target",
-            path_mapper=mapper)
+            {"/a": 1}, "/", {"/target/b": 0}, "/target", path_mapper=mapper
+        )
         self.assertEqual(m[0], {"/a": "/target/b"})
 
     def test_fat32_windowing(self):
         def fatcompare(s, t):
             x = int(s) - int(t)
-            if x >= 2: return 1
-            elif x <= -2: return -1
+            if x >= 2:
+                return 1
+            elif x <= -2:
+                return -1
             return 0
+
         m = mod.compute_synchronization(
-            {"/a":1},
-            "/",
-            {"/target/a":0},
-            "/target",
-            time_comparator=fatcompare)
+            {"/a": 1}, "/", {"/target/a": 0}, "/target", time_comparator=fatcompare
+        )
         self.assertEqual(m[0], {})
         m = mod.compute_synchronization(
-            {"/a":2},
-            "/",
-            {"/target/a":1},
-            "/target",
-            time_comparator=fatcompare)
+            {"/a": 2}, "/", {"/target/a": 1}, "/target", time_comparator=fatcompare
+        )
         self.assertEqual(m[0], {})
         m = mod.compute_synchronization(
-            {"/a":1},
-            "/",
-            {"/target/a":2},
-            "/target",
-            time_comparator=fatcompare)
+            {"/a": 1}, "/", {"/target/a": 2}, "/target", time_comparator=fatcompare
+        )
         self.assertEqual(m[0], {})
         m = mod.compute_synchronization(
-            {"/a":4},
-            "/",
-            {"/target/a":2},
-            "/target",
-            time_comparator=fatcompare)
-        self.assertEqual(m[0], {"/a":"/target/a"})
+            {"/a": 4}, "/", {"/target/a": 2}, "/target", time_comparator=fatcompare
+        )
+        self.assertEqual(m[0], {"/a": "/target/a"})
 
     def test_complex(self):
-        s = {"/source/abc":45, "/source/def":30}
+        s = {"/source/abc": 45, "/source/def": 30}
         t = {}
         sp = "/"
         tp = "/target"
         e = {
-             "/source/abc":"/target/source/abc",
-             "/source/def":"/target/source/def",
+            "/source/abc": "/target/source/abc",
+            "/source/def": "/target/source/def",
         }
         m = mod.compute_synchronization(s, sp, t, tp)
         self.assertEqual(m[0], e)
 
         sp = "/source"
         e = {
-             "/source/abc":"/target/abc",
-             "/source/def":"/target/def",
+            "/source/abc": "/target/abc",
+            "/source/def": "/target/def",
         }
         m = mod.compute_synchronization(s, sp, t, tp)
         self.assertEqual(m[0], e)
@@ -250,22 +225,20 @@ class TestComputeSynchronization(unittest.TestCase):
 
         sp = "/source/a"
         e = {
-             "/source/abc":"/target/../abc",
-             "/source/def":"/target/../def",
+            "/source/abc": "/target/../abc",
+            "/source/def": "/target/../def",
         }
-        self.assertRaises(ValueError,
-           lambda: mod.compute_synchronization(s, sp, t, tp))
+        self.assertRaises(ValueError, lambda: mod.compute_synchronization(s, sp, t, tp))
 
 
 class TestSynchronizer(unittest.TestCase):
-
     def setUp(self):
         t = DummyTranscoder()
         self.k = mod.Synchronizer(t)
 
     def test_parse_playlists(self):
         sources, output = synthetic_playlists_fixtures()
-        [ self.k.add_playlist(p) for p in sources ]
+        [self.k.add_playlist(p) for p in sources]
         self.k._parse_playlists()
         filelist = self.k.source_files
         self.assertTrue(lambda: len(filelist))
@@ -276,7 +249,7 @@ class TestSynchronizer(unittest.TestCase):
         f, t = mtimes_fixtures()
         p1 = StringIO(f[0].name + "\n" + f[1].name)
         p2 = StringIO(f[1].name)
-        [ self.k.add_playlist(p) for p in [p1, p2] ]
+        [self.k.add_playlist(p) for p in [p1, p2]]
 
         try:
             self.k._parse_playlists()
@@ -300,7 +273,8 @@ class TestSynchronizer(unittest.TestCase):
         self.k.set_target_dir(directory)
         try:
             self.k._scan_target_dir()
-            for f in files: self.assertIn(f, self.k.target_files)
+            for f in files:
+                self.assertIn(f, self.k.target_files)
         finally:
             shutil.rmtree(directory)
 
@@ -321,17 +295,17 @@ class TestSynchronizer(unittest.TestCase):
     def test_compute_synchronization(self):
         self.k.set_target_dir("/target")
         self.k.scan_done = True  # simulate scanning done
-        self.k.source_files_mtimes = {"/source/a.mp3":5}
-        self.k.target_files_mtimes = {"/target/a.mp3":1}
+        self.k.source_files_mtimes = {"/source/a.mp3": 5}
+        self.k.target_files_mtimes = {"/target/a.mp3": 1}
         ops = self.k.compute_synchronization()[0]
         self.assertEqual(ops, {"/source/a.mp3": "/target/a.mp3"})
 
-        self.k.target_files_mtimes = {"/target/a.mp3":4}
+        self.k.target_files_mtimes = {"/target/a.mp3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
         self.assertEqual(ops, {})
 
-        self.k.source_files_mtimes = {"/source/a.ogg":7}
+        self.k.source_files_mtimes = {"/source/a.ogg": 7}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
         self.assertEqual(ops, {})
@@ -340,91 +314,94 @@ class TestSynchronizer(unittest.TestCase):
         self.k.scan_done = True  # simulate scanning done
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
-        self.assertEqual(ops, {"/source/a.ogg":"/target/a.mp3"})
+        self.assertEqual(ops, {"/source/a.ogg": "/target/a.mp3"})
 
-        self.k.source_files_mtimes = {"/source/a.MP3":4}
-        self.k.target_files_mtimes = {"/target/a.mp3":4}
+        self.k.source_files_mtimes = {"/source/a.MP3": 4}
+        self.k.target_files_mtimes = {"/target/a.mp3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
         self.assertEqual(ops, {})
 
-        self.k.source_files_mtimes = {"/source/a.MP3":7}
-        self.k.target_files_mtimes = {"/target/a.mp3":4}
+        self.k.source_files_mtimes = {"/source/a.MP3": 7}
+        self.k.target_files_mtimes = {"/target/a.mp3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
-        self.assertEqual(ops, {'/source/a.MP3': '/target/a.mp3'})
+        self.assertEqual(ops, {"/source/a.MP3": "/target/a.mp3"})
 
-        self.k.source_files_mtimes = {"/source/a.MP3":7, "/source/a.mp3":8}
-        self.k.target_files_mtimes = {"/target/a.mp3":4, "/target/b.mp3":6}
+        self.k.source_files_mtimes = {"/source/a.MP3": 7, "/source/a.mp3": 8}
+        self.k.target_files_mtimes = {"/target/a.mp3": 4, "/target/b.mp3": 6}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
-        self.assertEqual(ops, {'/source/a.MP3': '/target/a.mp3'})
+        self.assertEqual(ops, {"/source/a.MP3": "/target/a.mp3"})
         ops = self.k.compute_synchronization()[2]
         self.assertEqual(ops, {})
         ops = self.k.compute_synchronization()[3]
         self.assertEqual(ops, ["/target/b.mp3"])
 
-        self.k.source_files_mtimes = {"/source/a.MP3":7, "/source/a.mp3":8}
-        self.k.target_files_mtimes = {"/target/a.mp3":4, "/target/b.mp3":6}
+        self.k.source_files_mtimes = {"/source/a.MP3": 7, "/source/a.mp3": 8}
+        self.k.target_files_mtimes = {"/target/a.mp3": 4, "/target/b.mp3": 6}
         self.k.exclude_beneath = ["/target"]
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[3]
         self.assertEqual(ops, [])
         self.k.exclude_beneath = []
 
-        self.k.source_files_mtimes = {"/source/a.MP3":7}
-        self.k.target_files_mtimes = {"/target/a.MP3":4}
+        self.k.source_files_mtimes = {"/source/a.MP3": 7}
+        self.k.target_files_mtimes = {"/target/a.MP3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
-        self.assertEqual(ops, {'/source/a.MP3': '/target/a.MP3'})
+        self.assertEqual(ops, {"/source/a.MP3": "/target/a.MP3"})
 
-        self.k.source_files_mtimes = {"/source/a.Ogg":4}
-        self.k.target_files_mtimes = {"/target/a.mp3":4}
+        self.k.source_files_mtimes = {"/source/a.Ogg": 4}
+        self.k.target_files_mtimes = {"/target/a.mp3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
         self.assertEqual(ops, {})
         ops = self.k.compute_synchronization()[2]  # the skipped files
-        self.assertEqual(ops, {"/source/a.Ogg":"/target/a.mp3"})
+        self.assertEqual(ops, {"/source/a.Ogg": "/target/a.mp3"})
 
-        self.k.source_files_mtimes = {"/source/a.OgG":9}
-        self.k.target_files_mtimes = {"/target/a.mp3":4}
+        self.k.source_files_mtimes = {"/source/a.OgG": 9}
+        self.k.target_files_mtimes = {"/target/a.mp3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
-        self.assertEqual(ops, {'/source/a.OgG': '/target/a.mp3'})
+        self.assertEqual(ops, {"/source/a.OgG": "/target/a.mp3"})
 
-        self.k.source_files_mtimes = {"/source/a.OgG":9}
-        self.k.target_files_mtimes = {"/target/a.MP3":4}
+        self.k.source_files_mtimes = {"/source/a.OgG": 9}
+        self.k.target_files_mtimes = {"/target/a.MP3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()[0]
-        self.assertEqual(ops, {'/source/a.OgG': '/target/a.MP3'})
+        self.assertEqual(ops, {"/source/a.OgG": "/target/a.MP3"})
 
         e = Exception()
-        self.k.source_files_mtimes = {"/source/a.OgG":e,
-                                    "/source/a.mP3":8}
-        self.k.target_files_mtimes = {"/target/a.MP3":4}
+        self.k.source_files_mtimes = {"/source/a.OgG": e, "/source/a.mP3": 8}
+        self.k.target_files_mtimes = {"/target/a.MP3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()
-        self.assertEqual(ops[0], {'/source/a.mP3': '/target/a.MP3'})
-        self.assertEqual(ops[1], {'/source/a.OgG': e})
+        self.assertEqual(ops[0], {"/source/a.mP3": "/target/a.MP3"})
+        self.assertEqual(ops[1], {"/source/a.OgG": e})
 
-        self.k.source_files_mtimes = {"/invalidsource/a.OgG":e,
-                                    "/source/a.mP3":8}
-        self.k.target_files_mtimes = {"/target/a.MP3":4}
+        self.k.source_files_mtimes = {"/invalidsource/a.OgG": e, "/source/a.mP3": 8}
+        self.k.target_files_mtimes = {"/target/a.MP3": 4}
         self.k.compute_sync_cache = None
         ops = self.k.compute_synchronization()
-        self.assertEqual(ops[0], {'/source/a.mP3': '/target/a.MP3'})
-        self.assertEqual(ops[1], {'/invalidsource/a.OgG': e})
+        self.assertEqual(ops[0], {"/source/a.mP3": "/target/a.MP3"})
+        self.assertEqual(ops[1], {"/invalidsource/a.OgG": e})
 
     def test_synchronize(self):
-        old = mod.SynchronizerSlave._synchronize_wrapper
         def compute_synchronization():
-            return {"a":"b"}, {}, {}, []
-        def _synchronize_wrapper(self, src, dst):
-            return dst
-        self.k.compute_synchronization = compute_synchronization
-        mod.SynchronizerSlave._synchronize_wrapper = _synchronize_wrapper
-        self.k._ensure_directories_exist = lambda _: None
-        try:
+            return {"a": "b"}, {}, {}, []
+
+        def sync(self, src, dst):
+            with open(src, "w"):
+                pass
+            with open(dst, "w"):
+                pass
+
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            self.k.compute_synchronization = compute_synchronization
+            mod.SynchronizerSlave.sync = sync
+            self.k._ensure_directories_exist = lambda _: None
             sync_tasks = self.k.synchronize()
             number = 0
             for f, result in sync_tasks:
@@ -432,12 +409,11 @@ class TestSynchronizer(unittest.TestCase):
                 self.assertEqual(result, "b")
                 number += 1
             self.assertEqual(number, 1)
-        finally:
-            mod.SynchronizerSlave._synchronize_wrapper = old
 
     def test_synchronize_deletions(self):
         def compute_synchronization(*args, **kwargs):
             return {"/source/a": "/target/a"}, {}, {}, ["/target/pls/zzz"]
+
         self.k.compute_synchronization = compute_synchronization
 
         res = []
@@ -446,14 +422,17 @@ class TestSynchronizer(unittest.TestCase):
 
     def test_bad_synchronize(self):
         self.fired = []
+
         def compute_synchronization():
-            return {"a":"b", "c":"d"}, {}, {}, []
+            return {"a": "b", "c": "d"}, {}, {}, []
+
         def transcode(src, dst):
             raise Exception("m")
+
         self.k.compute_synchronization = compute_synchronization
         self.k.transcoder.transcode = transcode
         self.k._ensure_directories_exist = lambda _: None
 
         sync_tasks = list(self.k.synchronize())
-        results = [ x[1] for x in sync_tasks ]
+        results = [x[1] for x in sync_tasks]
         assert all(isinstance(x, Exception) for x in results)
