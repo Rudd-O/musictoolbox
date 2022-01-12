@@ -1,7 +1,7 @@
 """
 Transcoders!
 """
-
+import logging
 import os
 import shutil
 import subprocess
@@ -11,9 +11,33 @@ import iniparse
 from musictoolbox import old
 
 try:
+    from pipes import quote
+except ImportError:
+    from shlex import quote
+
+try:
     from urllib.request import pathname2url
 except ImportError:
     from urllib import pathname2url
+
+
+logger = logging.getLogger(__name__)
+
+
+def run(cmd):
+    logger.debug("Running %s", " ".join(quote(s) for s in cmd))
+    return subprocess.check_call(
+        cmd,
+        stdin=None,
+        stdout=None,
+        stderr=None,
+        close_fds=True,
+    )
+
+
+def get_output(cmd):
+    logger.debug("Getting output from %s", " ".join(quote(s) for s in cmd))
+    return subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
 
 
 class CannotTranscode(Exception):
@@ -107,11 +131,7 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
 
     def transcode(self, src, dst):
         """Transcode FLV / MP4 to MP3 file"""
-        output = subprocess.check_output(
-            ["ffprobe", src],
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        output = get_output(["ffprobe", src])
         src = "file://" + pathname2url(src)
         if "Audio: mp3" in output:
             cmd = [
@@ -149,13 +169,7 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
                 "filesink",
                 "location=%s" % dst,
             ]
-        subprocess.check_call(
-            cmd,
-            stdin=None,
-            stdout=None,
-            stderr=None,
-            close_fds=True,
-        )
+        run(cmd)
 
 
 class ExtractAudioTranscoder(Transcoder):
@@ -163,11 +177,7 @@ class ExtractAudioTranscoder(Transcoder):
 
     def would_transcode_file_to(self, src):
         """Transcode MP4 to M4A file"""
-        output = subprocess.check_output(
-            ["ffprobe", src],
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        output = get_output(["ffprobe", src])
         if "Audio: mp3" in output:
             return "mp3"
         elif "Audio: aac" in output:
@@ -177,21 +187,16 @@ class ExtractAudioTranscoder(Transcoder):
             raise CannotTranscode(ext[1:])
 
     def transcode(self, src, dst):
-        subprocess.check_call(
-            [
-                "ffmpeg",
-                "-i",
-                src,
-                "-acodec",
-                "copy",
-                "-vn",
-                dst,
-            ],
-            stdin=None,
-            stdout=None,
-            stderr=None,
-            close_fds=True,
-        )
+        cmd = [
+            "ffmpeg",
+            "-i",
+            src,
+            "-acodec",
+            "copy",
+            "-vn",
+            dst,
+        ]
+        run(cmd)
 
 
 class FlvMp4WebmToWavTranscoder(Transcoder):
@@ -222,13 +227,7 @@ class FlvMp4WebmToWavTranscoder(Transcoder):
             "filesink",
             "location=%s" % dst,
         ]
-        subprocess.check_call(
-            cmd,
-            stdin=None,
-            stdout=None,
-            stderr=None,
-            close_fds=True,
-        )
+        run(cmd)
 
 
 class AudioToMp3Transcoder(Transcoder):
@@ -261,13 +260,7 @@ class AudioToMp3Transcoder(Transcoder):
             "filesink",
             "location=%s" % dst,
         ]
-        subprocess.check_call(
-            cmd,
-            stdin=None,
-            stdout=None,
-            stderr=None,
-            close_fds=True,
-        )
+        run(cmd)
 
 
 class AudioToWavTranscoder(Transcoder):
@@ -298,13 +291,7 @@ class AudioToWavTranscoder(Transcoder):
             "filesink",
             "location=%s" % dst,
         ]
-        subprocess.check_call(
-            cmd,
-            stdin=None,
-            stdout=None,
-            stderr=None,
-            close_fds=True,
-        )
+        run(cmd)
 
 
 class ConfigurableTranscoder(Transcoder):
