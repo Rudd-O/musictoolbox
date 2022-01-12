@@ -1118,7 +1118,7 @@ def relativize(listoffiles, commonprefix=None):
 
 def vfatprotect(f):
     f = f.replace("./", "/")
-    for illegal in '?<>\:*|"^':
+    for illegal in '?<>\\:*|"^':
         f = f.replace(illegal, "_")
     while "./" in f:
         f = f.replace("./", "/")
