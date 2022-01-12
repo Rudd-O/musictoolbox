@@ -35,6 +35,23 @@ def run(cmd):
     )
 
 
+def gst(src, dst, *elements):
+    cmd = ["gst-launch-1.0", "-f"]
+    cmd += ["giosrc", "location=%s" % src]
+    for element in elements:
+        cmd.append("!")
+        if type(element) in (list, tuple):
+            cmd.extend(element)
+        else:
+            cmd.append(element)
+    cmd.append("!")
+    cmd += [
+        "filesink",
+        "location=%s" % dst,
+    ]
+    return cmd
+
+
 def get_output(cmd):
     logger.debug("Getting output from %s", " ".join(quote(s) for s in cmd))
     return subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
@@ -134,41 +151,20 @@ class FlvMp4WebmToMp3Transcoder(Transcoder):
         output = get_output(["ffprobe", src])
         src = "file://" + pathname2url(src)
         if "Audio: mp3" in output:
-            cmd = [
-                "gst-launch-1.0",
-                "-f",
-                "giosrc",
-                "location=%s" % src,
-                "!",
-                "flvdemux",
-                "!",
-                "audio/mpeg",
-                "!",
-                "xingmux",
-                "!",
-                "filesink",
-                "location=%s" % dst,
-            ]
+            cmd = gst(src, dst, "flvdemux", "audio/mpeg", "xingmux")
         else:
-            cmd = [
-                "gst-launch-1.0",
-                "-f",
-                "giosrc",
-                "location=%s" % src,
-                "!",
+            cmd = gst(
+                src,
+                dst,
                 "decodebin",
-                "!",
                 "audioconvert",
-                "!",
-                "lamemp3enc",
-                "encoding-engine-quality=2",
-                "quality=0",
-                "!",
+                [
+                    "lamemp3enc",
+                    "encoding-engine-quality=2",
+                    "quality=0",
+                ],
                 "xingmux",
-                "!",
-                "filesink",
-                "location=%s" % dst,
-            ]
+            )
         run(cmd)
 
 
@@ -210,23 +206,14 @@ class FlvMp4WebmToWavTranscoder(Transcoder):
     def transcode(self, src, dst):
         """Transcode FLV / MP4 to RIFF WAVE file"""
         src = "file://" + pathname2url(src)
-        cmd = [
-            "gst-launch-1.0",
-            "-f",
-            "giosrc",
-            "location=%s" % src,
-            "!",
+        cmd = gst(
+            src,
+            dst,
             "decodebin",
-            "!",
             "audioconvert",
-            "!",
             "audio/x-raw,format=F32LE",
-            "!",
             "wavenc",
-            "!",
-            "filesink",
-            "location=%s" % dst,
-        ]
+        )
         run(cmd)
 
 
@@ -241,25 +228,18 @@ class AudioToMp3Transcoder(Transcoder):
     def transcode(self, src, dst):
         """Transcode audio file to MP3 file"""
         src = "file://" + pathname2url(src)
-        cmd = [
-            "gst-launch-1.0",
-            "-f",
-            "giosrc",
-            "location=%s" % src,
-            "!",
+        cmd = gst(
+            src,
+            dst,
             "decodebin",
-            "!",
             "audioconvert",
-            "!",
-            "lamemp3enc",
-            "encoding-engine-quality=2",
-            "quality=0",
-            "!",
+            [
+                "lamemp3enc",
+                "encoding-engine-quality=2",
+                "quality=0",
+            ],
             "xingmux",
-            "!",
-            "filesink",
-            "location=%s" % dst,
-        ]
+        )
         run(cmd)
 
 
@@ -274,23 +254,14 @@ class AudioToWavTranscoder(Transcoder):
     def transcode(self, src, dst):
         """Transcode audio file to MP3 file"""
         src = "file://" + pathname2url(src)
-        cmd = [
-            "gst-launch-1.0",
-            "-f",
-            "giosrc",
-            "location=%s" % src,
-            "!",
+        cmd = gst(
+            src,
+            dst,
             "decodebin",
-            "!",
             "audioconvert",
-            "!",
             "audio/x-raw,format=F32LE",
-            "!",
             "wavenc",
-            "!",
-            "filesink",
-            "location=%s" % dst,
-        ]
+        )
         run(cmd)
 
 
