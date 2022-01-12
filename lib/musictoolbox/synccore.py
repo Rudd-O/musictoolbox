@@ -707,8 +707,8 @@ class Synchronizer(object):
             return os.path.join(directory, tmpfilename)
 
         series = set((s, tmpf(d), d) for s, d in will_sync.items())
-        try:
-            with fut.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        with fut.ThreadPoolExecutor(max_workers=concurrency) as executor:
+            try:
                 future_to_url = {
                     executor.submit(slave.sync, s, tmpd): (s, tmpd, d)
                     for s, tmpd, d in series
@@ -717,28 +717,29 @@ class Synchronizer(object):
                     item = future_to_url[future]
                     s, tmpd, d = item
                     try:
-                        future.result()
-                    except BaseException as e:
+                        r = future.result()
+                        if isinstance(r, Exception):
+                            raise r
+                    except Exception as e:
                         d = e
-                    if isinstance(d, BaseException):
-                        delete_ignoring_notfound(tmpd)
-                    elif os.stat(tmpd).st_size == 0 and os.stat(s).st_size != 0:
-                        d = AssertionError(
-                            "we expected the transcoded file to be larger than 0 bytes"
-                        )
-                        delete_ignoring_notfound(tmpd)
                     else:
-                        try:
-                            os.rename(tmpd, d)
-                        except BaseException as e:
-                            delete_ignoring_notfound(tmpd)
-                            d = e
+                        if os.stat(tmpd).st_size == 0 and os.stat(s).st_size != 0:
+                            d = RuntimeError(
+                                "we expected the transcoded file to be larger than 0 bytes"
+                            )
+                        else:
+                            try:
+                                os.rename(tmpd, d)
+                            except BaseException as e:
+                                d = e
+                    delete_ignoring_notfound(tmpd)
                     series.remove(item)
                     yield s, d
-        finally:
-            # This should be empty if everything did in fact sync,
-            # or failed to sync but was deleted eagerly earlier.
-            [delete_ignoring_notfound(tmpd) for _, tmpd, d in series]
+            except BaseException:
+                executor.shutdown(wait=True, cancel_futures=True)
+                raise
+            finally:
+                [delete_ignoring_notfound(tmpd) for _, tmpd, d in series]
 
         logger.info("Ended synchronization")
 

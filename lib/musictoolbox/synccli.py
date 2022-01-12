@@ -89,8 +89,8 @@ class SynchronizationCLIBackend:
         sync_tasks = self.synchronizer.synchronize(concurrency=self.concurrency)
         errors = None
         for s, t in sync_tasks:
-            if isinstance(t, Exception):
-                print("Not synced: %r\nBecause: %s\n" % (s, t), file=sys.stderr)
+            if isinstance(t, BaseException) or t == KeyboardInterrupt:
+                print("Not synced: %r\nBecause: %r\n" % (s, t), file=sys.stderr)
                 if self.debug:
                     raise t
                 errors = True
@@ -118,9 +118,11 @@ class SynchronizationCLIBackend:
                 for s, t in deletion_failures:
                     if self.debug:
                         raise t
-                    print(
-                        "Could not delete: %r\nBecause: %r\n" % (s, t), file=sys.stderr
-                    )
+                    if not isinstance(t, FileNotFoundError):
+                        print(
+                            "Could not delete: %r\nBecause: %r\n" % (s, t),
+                            file=sys.stderr,
+                        )
                 print("", file=sys.stderr)
                 exitval += 8
 
