@@ -1,2 +1,4 @@
 2022-01-12 fix the fixplaylist program (make it better, actually)
 2022-01-12 "copy tags" from NFO files (from videos) to MP3
+2022-01-12 add an alarm command to prevent gst- hangs from clogging up the pipeline
+2022-01-12 add config setting for all GST transcoders to disable VAAPI with env var LIBVA_DRIVER_NAME=fakedriver
