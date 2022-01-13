@@ -43,6 +43,6 @@ setup(
 	install_requires = ['mutagen', 'iniparse'],
 	scripts = [ f for f in glob.glob(os.path.join("bin","*")) if not f.endswith("~") ],
 	keywords = "mp3",
-	requires = ["Twisted"],
+	requires = ["Twisted", "packaging"],
 	zip_safe=False,
 )

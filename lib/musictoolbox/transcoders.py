@@ -4,12 +4,15 @@ Transcoders!
 import glob
 import logging
 import os
+import re
 import shutil
 import subprocess
 
 from iniparse import INIConfig
 import iniparse
 from musictoolbox import old
+import packaging.version
+
 
 try:
     from pipes import quote
@@ -39,7 +42,30 @@ def run(cmd):
 _gst_command = None
 
 
-def gst(src,dst,*elements, force_gst_command=None):
+def sort_gst_candidates(candidates):
+    """Sort GStreamer launch candidates, highest versions first."""
+    version_re = re.compile(".*-([0-9]+($|[.][0-9]+)+)")
+
+    def getver(v):
+        try:
+            return packaging.version.parse(v)
+        except packaging.version.InvalidVersion:
+            return None
+
+    withversions = [
+        (
+            version_re.match(name).groups()[0]
+            if version_re.match(name)
+            else "10000000",
+            name,
+        )
+        for name in candidates
+    ]
+    withversions = [(getver(v), x) for v, x in withversions if getver(v)]
+    return [x[1] for x in reversed(sorted(withversions))]
+
+
+def gst(src, dst, *elements, force_gst_command=None):
     if force_gst_command:
         prog = force_gst_command
     else:
@@ -47,7 +73,9 @@ def gst(src,dst,*elements, force_gst_command=None):
         if _gst_command is None:
             prog = "gst-launch-1.0"
             for p in os.environ.get("PATH", "").split(os.path.pathsep):
-                opts = glob.glob(os.path.join(glob.escape(p), "gst-launch*"))
+                opts = sort_gst_candidates(
+                    glob.glob(os.path.join(glob.escape(p), "gst-launch*"))
+                )
                 for opt in opts:
                     if os.access(opt, os.X_OK):
                         prog = opt

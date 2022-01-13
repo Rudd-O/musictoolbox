@@ -1,5 +1,5 @@
+import os
 import unittest
-
 
 import musictoolbox.transcoders as mod
 
@@ -64,3 +64,31 @@ class TestGst(unittest.TestCase):
             "location=%s" % dst,
         ]
         self.assertListEqual(exp_, mod.gst(src, dst, *in_, force_gst_command=f))
+
+    def test_candidate_sort_largest_version_wins(self):
+        in_ = [
+            "/usr/bin/gst-launch-0.10",
+            "/usr/bin/gst-launch-1.0",
+            "/usr/bin/gst-launch-1.1",
+        ]
+        exp = [
+            "/usr/bin/gst-launch-1.1",
+            "/usr/bin/gst-launch-1.0",
+            "/usr/bin/gst-launch-0.10",
+        ]
+        res = mod.sort_gst_candidates(in_)
+        self.assertListEqual(exp, res)
+
+    def test_candidate_sort_unversioned_wins(self):
+        in_ = [
+            "/usr/bin/gst-launch",
+            "/usr/bin/gst-launch-1.0",
+            "/usr/bin/gst-launch-1.1",
+        ]
+        exp = [
+            "/usr/bin/gst-launch",
+            "/usr/bin/gst-launch-1.1",
+            "/usr/bin/gst-launch-1.0",
+        ]
+        res = mod.sort_gst_candidates(in_)
+        self.assertListEqual(exp, res)
