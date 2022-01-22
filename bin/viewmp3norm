@@ -1,16 +1,11 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import sys, os
-sys.path.insert(0,
-  os.path.join(
-   os.path.dirname(__file__),
-   os.path.pardir,
-   "lib",
-  )
-)
-import musictoolbox
-import logging
-logging.basicConfig(level=logging.DEBUG)
+
+import musictoolbox.cmd.view
+from musictoolbox.logging import basicConfig
+
+basicConfig(main_module_name="musictoolbox.cmd.view", level=logging.DEBUG)
 
 args = sys.argv[1:]
-musictoolbox.viewmp3norm(args)
+musictoolbox.cmd.view.viewmp3norm(args)

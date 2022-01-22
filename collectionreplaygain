@@ -1,6 +1,0 @@
-#!/bin/bash
-
-set -e
-
-cd ~/Music/Good
-find -type d -print0 | xargs -0 -n 4 amarokreplaygain "$@"

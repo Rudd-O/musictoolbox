@@ -6,3 +6,5 @@ build
 *.egg-info
 /.pytest_cache/
 xunit.xml
+/.mypy_cache/
+*.prof

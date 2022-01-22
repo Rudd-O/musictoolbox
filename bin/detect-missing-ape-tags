@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
 import sys
-sys.path.insert(0,"/home/rudd-o/Projects/Mine/musictoolbox/lib")
-import musictoolbox
-import logging
-logging.basicConfig(level=logging.DEBUG)
+import musictoolbox.cmd.detect
+from musictoolbox.logging import basicConfig
 
-args = sys.argv[1:]
-musictoolbox.detect_broken_ape_tags(args)
+basicConfig(main_module_name="musictoolbox.cmd.detect", level=logging.DEBUG)
+
+musictoolbox.cmd.detect.detect_missing_ape_tags(sys.argv[1:])

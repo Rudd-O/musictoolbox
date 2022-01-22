@@ -1,4 +1,14 @@
 2022-01-12 fix the fixplaylist program (make it better, actually)
-2022-01-12 "copy tags" from NFO files (from videos) to MP3
+2022-01-12 "copy tags" from NFO files (from videos) to MP3 as postprocessor
+2021-01-25 do replaygain for files that don't have replaygain information yet (python3-rgain3 module is available)
 2022-01-12 add an alarm command to prevent gst- hangs from clogging up the pipeline
 2022-01-12 add config setting for all GST transcoders to disable VAAPI with env var LIBVA_DRIVER_NAME=fakedriver
+2022-01-12 autodetection of which transcoders are usable (don't register a transcoder if it lacks programs it needs to work)
+2022-01-12 dump of what encoders are loaded on the system
+2022-01-12 add back suppport for more command line decoders / encoders (flac, ogg123, lame)
+2022-01-12 document all the programs shipping with the toolkit, and make a nice microsite for the program in my website
+2022-01-12 profile slowness during plan computation
+2022-01-25 parallelize and make interruptible the execution of the synchronization computation
+x 2022-01-12 force VFAT handling with a parameter, as otherwise Syncthing-Android won't like it
+x 2022-01-12 fix inaccuracies in the README.md file
+x 2022-01-12 add --profile for command line option to dump a profile to a file

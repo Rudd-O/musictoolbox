@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
 import sys
-import musictoolbox.sync.cli as cli
+import musictoolbox.transcoding.cli as cli
 
 sys.exit(cli.main())

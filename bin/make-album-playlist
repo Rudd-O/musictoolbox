@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import musictoolbox.playlist as playlist
+import musictoolbox.cmd.makealbumplaylist as playlist
 
 sys.exit(playlist.main())
