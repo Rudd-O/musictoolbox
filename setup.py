@@ -44,7 +44,11 @@ setup(
         ]
     ),
     classifiers=classifiers,
-    packages=["musictoolbox"],
+    packages=["musictoolbox",
+              "musictoolbox.sync",
+              "musictoolbox.transcoding",
+              "musictoolbox.transcoding.codecs",
+              "musictoolbox.cmd"],
     install_requires=[
         "mutagen",
         "Twisted",
