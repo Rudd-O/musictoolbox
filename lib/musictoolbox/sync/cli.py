@@ -6,7 +6,7 @@ import sys
 import textwrap
 import typing
 
-from musictoolbox.old import transfer_tags  # type: ignore
+from ..tagging import transfer_tags  # type: ignore
 
 from ..files import Absolutize
 from ..logging import basicConfig
