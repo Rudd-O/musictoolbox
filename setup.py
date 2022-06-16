@@ -54,7 +54,7 @@ setup(
         "Twisted",
         "packaging",
         "networkx",
-        "xdg",
+        "pyxdg",
         "psutil",
     ],
     entry_points={
