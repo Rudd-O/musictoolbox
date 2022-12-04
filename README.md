@@ -18,7 +18,7 @@ formats you want your music to be transcoded to.
 Run `syncplaylists --help` for more information.
 
 `syncplaylists` accepts a simple YAML file in your home directory, by default read
-from file `transcoding.yaml` in `$HOME/.config/musictoolbox` (althoug you can change
+from file `transcoding.yaml` in `$HOME/.config/musictoolbox` (although you can change
 which file to use with the `-c` command line parameter).  The file must say how you
 want things to be transcoded (documentation on the config format is forthcoming):
 
@@ -45,6 +45,12 @@ actually *use* the tool:
 That will copy all songs listed in all M3U playlists within your
 `~/Music/Playlists` folder directly into `/mnt/usbdrive/Music`, preserving
 the directory structure you have.
+
+Any playlist you specify as parameter can also be a symlink.  If they are, then
+any relative paths within the playlist will be resolved in relation to the target
+of the symlink, rather than the symlink itself.  This lets you symlink album
+playlists to a folder with favorite playlists of yours, and then use syncplaylists
+directly with those symlinked favorites.
 
 ### genplaylist: the playlist generator
 
