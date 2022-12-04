@@ -33,15 +33,17 @@ def parse_playlists(
     - keys: absolute path names mentioned in the playlists
     - values: playlists where the file appeared
     The list is a sequence of (file, Exception) occurred while parsing.
+    Symlinked playlists are followed to their targets to extract paths.
     """
     files: typing.Dict[AbsolutePath, typing.List[AbsolutePath]] = {}
     excs: typing.List[typing.Tuple[AbsolutePath, Exception]] = []
     for source in sources:
         try:
-            sourcedir = source.parent
-            with open(source, "r") as sourcef:
+            realsource = Absolutize(os.path.realpath(source))
+            realsourcedir = realsource.parent
+            with open(realsource, "r") as sourcef:
                 thisbatch = [
-                    Absolutize(os.path.join(sourcedir, x.strip()))
+                    Absolutize(os.path.join(realsourcedir, x.strip()))
                     for x in sourcef.readlines()
                     if x.strip() and not x.strip().startswith("#")
                 ]
@@ -55,7 +57,9 @@ def parse_playlists(
     return files, excs
 
 
-def list_files_recursively(directory: AbsolutePath) -> typing.List[AbsolutePath]:
+def list_files_recursively(
+    directory: AbsolutePath,
+) -> typing.List[AbsolutePath]:
     """Return a list of absolute paths from recursively listing a directory"""
     return [
         Absolutize(os.path.join(base, f))
@@ -68,7 +72,14 @@ class CallerStopped(Exception):
     pass
 
 
-SyncQueueItem = typing.Tuple[AbsolutePath, AbsolutePath, typing.Union[None, Exception]]
+SyncQueueItem = typing.Tuple[
+    AbsolutePath,
+    AbsolutePath,
+    typing.Union[
+        None,
+        Exception,
+    ],
+]
 
 
 class SyncPool(Thread):
@@ -252,6 +263,9 @@ class Synchronizer(object):
         It yields tuples of (source_path, target_path, optional Exception)
         where the exception will not be None if there was a problem
         synchronizing a particular playlist.
+
+        Symlinked playlists are followed to their target files to compute
+        their synchronization.
         """
         # FIXME if adding params to the following call, add them above too
         will_sync_list, wont_sync, already_synced, _ = sync_plan
@@ -266,12 +280,13 @@ class Synchronizer(object):
 
         for p in self.playlists:
             newp = self.target_playlist_dir / p.name
+            oldp, p = p, Absolutize(os.path.realpath(p))
             try:
                 pdir = p.parent
                 with p.open("r") as pf:
                     pfl = pf.readlines()
                 newpfl = []
-                newpfl.append("# from: %s\n" % p)
+                newpfl.append("# from: %s\n" % oldp)
                 for l in pfl:
                     if l.startswith("#") or not l.strip():
                         newpfl.append(l)
@@ -306,9 +321,9 @@ class Synchronizer(object):
                         with newp.open("w") as newpf:
                             newpf.writelines(newpfl)
                             newpf.flush()
-                    yield (p, newp, None)
+                    yield (oldp, newp, None)
             except Exception as e:
-                yield (p, newp, e)
+                yield (oldp, newp, e)
 
     def synchronize_deletions(
         self, sync_plan: algo.SyncRet, dryrun: bool = False

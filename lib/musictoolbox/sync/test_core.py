@@ -28,7 +28,11 @@ from ..transcoding.test_registry import DummyLookup
 @contextlib.contextmanager
 def synthetic_playlists_fixtures() -> typing.Generator[
     typing.Tuple[
-        typing.List[AbsolutePath], typing.Dict[AbsolutePath, typing.List[AbsolutePath]]
+        typing.List[AbsolutePath],
+        typing.Dict[
+            AbsolutePath,
+            typing.List[AbsolutePath],
+        ],
     ],
     None,
     None,
@@ -71,8 +75,47 @@ def synthetic_playlists_fixtures() -> typing.Generator[
 
 
 @contextlib.contextmanager
+def symlinked_playlist_fixtures() -> typing.Generator[
+    typing.Tuple[
+        typing.List[AbsolutePath],
+        typing.Dict[
+            AbsolutePath,
+            typing.List[AbsolutePath],
+        ],
+    ],
+    None,
+    None,
+]:
+    with tempfile.TemporaryDirectory() as d:
+        os.mkdir(Path(d) / "subdir")
+        p1 = open(Path(d) / "subdir" / "pl.m3u", "w")
+        try:
+            p1.write(
+                textwrap.dedent(
+                    """
+                    #test playlist
+                    mp3.mp3
+                    """
+                )
+            )
+        finally:
+            p1.close()
+        p2 = Path(d) / "symlink.m3u"
+        os.symlink(p1.name, p2)
+
+        output = {
+            A(Path(d) / "subdir/mp3.mp3"): [A(p1.name), A(p2)],
+        }
+        yield [A(p1.name), A(p2)], output
+
+
+@contextlib.contextmanager
 def list_files_recursively_fixtures() -> typing.Generator[
-    typing.Tuple[str, typing.List[AbsolutePath], typing.List[typing.Union[int, float]]],
+    typing.Tuple[
+        str,
+        typing.List[AbsolutePath],
+        typing.List[typing.Union[int, float]],
+    ],
     None,
     None,
 ]:
@@ -93,6 +136,12 @@ class TestParsePlaylists(unittest.TestCase):
 
     def test_synthetic_playlists(self) -> None:
         with synthetic_playlists_fixtures() as (sources, output):
+            files, excs = mod.parse_playlists(sources)
+            self.assertEqual(files, output)
+            self.assertEqual(excs, [])
+
+    def test_symlinked_playlist(self) -> None:
+        with symlinked_playlist_fixtures() as (sources, output):
             files, excs = mod.parse_playlists(sources)
             self.assertEqual(files, output)
             self.assertEqual(excs, [])
@@ -205,12 +254,12 @@ class TestSynchronizer(unittest.TestCase):
             self.td,
             [
                 "Albums/Good/A-Ha/Take on me.mp3",
-                "Albums/Bad/Ace of Base/What you gonna tell your dad?.ogg",
+                "Albums/Bad/Ace of Base/Tell your dad?.ogg",
             ],
             [
                 ["Albums/Good/A-Ha/Take on me.mp3"],
                 [
-                    "Albums/Bad/Ace of Base/What you gonna tell your dad?.ogg",
+                    "Albums/Bad/Ace of Base/Tell your dad?.ogg",
                     "Albums/Good/A-Ha/Take on me.mp3",
                 ],
             ],
@@ -222,8 +271,8 @@ class TestSynchronizer(unittest.TestCase):
                 copypath("mp3"),
             ),
             (
-                self.td / "Albums/Bad/Ace of Base/What you gonna tell your dad?.ogg",
-                self.td / "output/Bad/Ace of Base/What you gonna tell your dad?.ogg",
+                self.td / "Albums/Bad/Ace of Base/Tell your dad?.ogg",
+                self.td / "output/Bad/Ace of Base/Tell your dad?.ogg",
                 copypath("ogg"),
             ),
         ]
@@ -242,13 +291,13 @@ class TestSynchronizer(unittest.TestCase):
     def test_vfat(self) -> None:
         in_ = (
             self.td,
-            ["Albums/Bad/Ace of Base/What you gonna tell your dad?.ogg"],
-            [["Albums/Bad/Ace of Base/What you gonna tell your dad?.ogg"]],
+            ["Albums/Bad/Ace of Base/Tell your dad?.ogg"],
+            [["Albums/Bad/Ace of Base/Tell your dad?.ogg"]],
         )
         want = [
             (
-                self.td / "Albums/Bad/Ace of Base/What you gonna tell your dad?.ogg",
-                self.td / "output/What you gonna tell your dad_.ogg",
+                self.td / "Albums/Bad/Ace of Base/Tell your dad?.ogg",
+                self.td / "output/Tell your dad_.ogg",
                 copypath("ogg"),
             ),
         ]
@@ -339,8 +388,39 @@ class TestSynchronizer(unittest.TestCase):
         s = self._makeStack(playlists, self.td)
         plan = s.compute_synchronization()
         plsync = list(s.synchronize_playlists(plan))
-        assert plsync == [(self.td / "0.m3u", self.td / "Playlists/0.m3u", None)]
+        assert plsync == [
+            (self.td / "0.m3u", self.td / "Playlists/0.m3u", None),
+        ]
         with (self.td / "Playlists/0.m3u").open("r") as f:
+            gotp = f.read()
+        self.assertMultiLineEqual(wantp, gotp)
+
+    def test_sync_playlists_symlink(self) -> None:
+        in_ = (
+            self.td,
+            ["Artist/Take on me.ogg"],
+            [["Artist/Take on me.ogg"]],
+        )
+        wantp = """# from: %s\n# was: %s\n%s""" % (
+            self.td / "symlinked/symlinked.m3u",
+            "Artist/Take on me.ogg",
+            "../Take on me.ogg",
+        )
+        playlists = syncplaylists_fixtures(*in_)
+        os.mkdir(self.td / "symlinked")
+        os.symlink(self.td / "0.m3u", self.td / "symlinked" / "symlinked.m3u")
+        playlists[0] = A(self.td / "symlinked" / "symlinked.m3u")
+        s = self._makeStack(playlists, self.td)
+        plan = s.compute_synchronization()
+        plsync = list(s.synchronize_playlists(plan))
+        assert plsync == [
+            (
+                self.td / "symlinked/symlinked.m3u",
+                self.td / "Playlists/symlinked.m3u",
+                None,
+            ),
+        ]
+        with (self.td / "Playlists/symlinked.m3u").open("r") as f:
             gotp = f.read()
         self.assertMultiLineEqual(wantp, gotp)
 

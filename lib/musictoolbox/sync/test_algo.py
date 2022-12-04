@@ -14,12 +14,20 @@ from ..transcoding.test_registry import DummyLookup
 def ab(
     iterable: typing.Union[typing.Dict[str, str], typing.List[str], str]
 ) -> typing.Union[
-    typing.Dict[AbsolutePath, AbsolutePath], typing.List[AbsolutePath], AbsolutePath
+    typing.Dict[AbsolutePath, AbsolutePath],
+    typing.List[AbsolutePath],
+    AbsolutePath,
 ]:
     if isinstance(iterable, list):
         return [Absolutize(x) for x in iterable]
     elif isinstance(iterable, dict):
-        return dict((Absolutize(x), Absolutize(y)) for x, y in iterable.items())
+        return dict(
+            (
+                Absolutize(x),
+                Absolutize(y),
+            )
+            for x, y in iterable.items()
+        )
     elif isinstance(iterable, str):
         return Absolutize(iterable)
     else:
@@ -143,7 +151,14 @@ class TestComputeSynchronization(unittest.TestCase):
 
     def test_simple_case(self) -> None:
         got = mod.compute_synchronization(
-            [], abp("/"), [], abp("/"), [], [], DummyTranscodingPather, AlwaysNewer
+            [],
+            abp("/"),
+            [],
+            abp("/"),
+            [],
+            [],
+            DummyTranscodingPather,
+            AlwaysNewer,
         )
         want: mod.SyncRet = ([], {}, {}, [])
         self.assertEqual(got, want)
@@ -246,7 +261,11 @@ class TestComputeSynchronization(unittest.TestCase):
         )
         want: mod.SyncRet = (
             [
-                (abp("/basedir/a"), abp("/mnt/d/target/a"), DummyTranscodingPath),
+                (
+                    abp("/basedir/a"),
+                    abp("/mnt/d/target/a"),
+                    DummyTranscodingPath,
+                ),
             ],
             {},
             {},
@@ -270,12 +289,18 @@ class TestComputeSynchronization(unittest.TestCase):
         )
         want: mod.SyncRet = (
             [
-                (abp("/basedir/a"), abp("/mnt/d/target/a"), DummyTranscodingPath),
+                (
+                    abp("/basedir/a"),
+                    abp("/mnt/d/target/a"),
+                    DummyTranscodingPath,
+                ),
             ],
             collections.OrderedDict(
                 {
                     abp("/basedir/A"): mod.Conflict(
-                        abp("/basedir/A"), abp("/mnt/d/target/a"), abp("/basedir/a")
+                        abp("/basedir/A"),
+                        abp("/mnt/d/target/a"),
+                        abp("/basedir/a"),
                     )
                 }
             ),
