@@ -5,7 +5,7 @@ import os
 import sys
 import typing
 
-import mutagen  # type: ignore
+import mutagen
 
 from ..logging import basicConfig
 
