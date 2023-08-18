@@ -77,6 +77,8 @@ def main() -> int:
         album_files[alb].append(f)
 
     if args.show:
+        if not files_album:
+            return 0
         return subprocess.call(["replaygain", "--show"] + list(files_album.keys()))
 
     ret = 0
