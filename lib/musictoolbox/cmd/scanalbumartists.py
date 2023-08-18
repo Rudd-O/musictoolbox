@@ -33,7 +33,9 @@ def main() -> int:
     p.add_argument(
         "-t",
         "--various-artists-tag",
-        help="content of the various artists album artist tag",
+        help="content of the various artists album artist tag;"
+        " if this is set to auto, then the album artist is deduced"
+        " from the most popular artist among the album",
         default="Various artists",
     )
     args = p.parse_args()
@@ -109,8 +111,33 @@ def main() -> int:
                     for f in files_to_fix:
                         print(f"      {f}")
 
+                va_text = args.various_artists_tag
+                if va_text == "auto":
+                    artists = [
+                        "" if a is None else a
+                        for _, artistdata in albumartists_data.items()
+                        for a, artist_files in artistdata.items()
+                        for _ in artist_files
+                    ]
+                    popular_artists = sorted(
+                        [
+                            (x, len(list(y)))
+                            for x, y in itertools.groupby(sorted(artists))
+                        ],
+                        key=lambda g: -g[1],
+                    )
+                    va_text = popular_artists[0][0]
+                    if (
+                        len(popular_artists) > 1
+                        and popular_artists[0][1] == popular_artists[1][1]
+                    ):
+                        va_text = None
+                if va_text is None:
+                    dumpfiles("Cannot determine album artist, skipping these files")
+                    continue
+
                 if args.fix:
-                    va_text = args.various_artists_tag
+                    print(f"    Adding album artist {va_text} among {popular_artists}")
                     for f in files_to_fix:
                         tag = tags[f]
                         tag[KEY_ALBUMARTIST] = [va_text]
@@ -118,6 +145,10 @@ def main() -> int:
                     dumpfiles("Files fixed")
                 else:
                     dumpfiles("Files to fix")
+                    print(
+                        f"    Would add the album artist {va_text}"
+                        f" among {popular_artists}"
+                    )
 
             # for albumartist, artistdata in albumartists_data.items():
             #    print(f"    {albumartist}:")
