@@ -50,7 +50,11 @@ def main() -> int:
                     os.path.join(root, x) for root, _, fs in os.walk(f) for x in fs
                 ]
             else:
-                files = [os.path.join(f, x) for x in os.listdir(f)]
+                files = [
+                    os.path.join(f, x)
+                    for x in os.listdir(f)
+                    if not os.path.isdir(os.path.join(f, x))
+                ]
         else:
             files = [f]
         allfiles.extend(files)
