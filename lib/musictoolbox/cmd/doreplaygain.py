@@ -3,6 +3,7 @@ import logging
 import mutagen
 import os
 import subprocess
+import sys
 
 from musictoolbox.logging import basicConfig
 
@@ -61,7 +62,11 @@ def main() -> int:
 
     files_album: dict[str, str | None] = {}
     for ff in allfiles:
-        metadata = mutagen.File(ff, easy=True)
+        try:
+            metadata = mutagen.File(ff, easy=True)
+        except Exception as exc:
+            print(f"Error identifying {ff}: {exc}", file=sys.stderr)
+            continue
         if metadata is None:
             continue
         try:
