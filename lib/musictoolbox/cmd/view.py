@@ -3,8 +3,8 @@ from __future__ import print_function
 import logging
 import typing
 
-from mutagen.apev2 import APEv2  # type:ignore
-from mutagen.id3 import ID3  # type:ignore
+from mutagen.apev2 import APEv2
+from mutagen.id3 import ID3
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 import sys
 import typing
-from mutagen.apev2 import APEv2, APENoHeaderError  # type: ignore
+from mutagen.apev2 import APEv2, APENoHeaderError
 
 
 def detect_broken_ape_tags(files: typing.List[str]) -> None:
