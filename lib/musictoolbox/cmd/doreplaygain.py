@@ -1,6 +1,6 @@
 import argparse
 import logging
-import mutagen  # type:ignore
+import mutagen
 import os
 import subprocess
 
