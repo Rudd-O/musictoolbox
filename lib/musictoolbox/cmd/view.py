@@ -5,6 +5,7 @@ import typing
 
 from mutagen.apev2 import APEv2
 from mutagen.id3 import ID3
+from mutagen import File
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +17,18 @@ REPLAYGAIN_TAGS = (
     "replaygain_track_peak",
     "replaygain_album_gain",
     "replaygain_album_peak",
+    "replaygain_reference_loudness",
+    "RVA2",
 )
 
 
-def viewmp3norm(files: typing.List[str]) -> None:
+def printpairs(toprint: list[tuple[str, typing.Any]]) -> None:
+    key_tpl = "%%%ds" % max(len(x[0]) for x in toprint)
+    for key, tag in toprint:
+        print(key_tpl % key, "  ", repr(tag))
+
+
+def viewmp3norm(files: list[str]) -> None:
     while files:
         file = files.pop(0)
 
@@ -27,9 +36,9 @@ def viewmp3norm(files: typing.List[str]) -> None:
         print(file)
 
         try:
-            tags = ID3(file)
+            tags = File(file)
         except Exception as e:
-            print("No ID3 tags", e)
+            print("No known tags", e)
             tags = None
         try:
             apetags = APEv2(file)
@@ -37,19 +46,27 @@ def viewmp3norm(files: typing.List[str]) -> None:
             print("No APE tags", e)
             apetags = None
 
-        if apetags:
+        toprint: list[tuple[str, typing.Any]] = []
+        for key, tag in list(apetags.items()):
+            toprint.append((key, tag))
+        if toprint:
             print("===APE tags====")
-            for key, tag in list(apetags.items()):
-                print("%30s" % key, "  ", repr(tag))
+            printpairs(toprint)
 
+        toprint = []
         if tags:
-            print("===RVA2 tags===")
+            toprint = []
             for key, tag in list(tags.items()):
                 try:
-                    if tag.desc.lower() in [x[0] for x in REPLAYGAIN_TAGS]:
-                        print("%30s" % key, "  ", repr(tag))
+                    if any(
+                        [x in tag.desc.lower() or x in key for x in REPLAYGAIN_TAGS]
+                    ):
+                        toprint.append((key, tag))
                 except AttributeError:
                     continue
+        if toprint:
+            print("===Other tags===")
+            printpairs(toprint)
 
 
 def viewtags(files: typing.List[str]) -> None:
@@ -70,15 +87,19 @@ def viewtags(files: typing.List[str]) -> None:
             print("No APE tags", e)
             apetags = None
 
+        toprint: list[tuple[str, typing.Any]] = []
         if apetags:
             print("===APE tags====")
             for key, tag in list(apetags.items()):
-                print("%30s" % key, "  ", repr(tag))
+                toprint.append((key, tag))
+            printpairs(toprint)
 
+        toprint = []
         if tags:
             print("===ID3 tags===")
             for key, tag in list(tags.items()):
-                print("%30s" % key, "  ", repr(tag))
+                toprint.append((key, tag))
+            printpairs(toprint)
 
 
 # algorithm begins here
