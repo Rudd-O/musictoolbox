@@ -83,7 +83,7 @@ def main() -> int:
         except Exception:
             assert 0, (folder, album, albumartist, artist, fn)
 
-    for folder, data in album_tree.items():
+    for folder, data in sorted(album_tree.items()):
         for album, albumartists_data in data.items():
             problems = []
             if None in albumartists_data and len(albumartists_data[None]) > 1:
