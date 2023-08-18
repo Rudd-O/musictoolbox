@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+
+import sys
+import logging
+
+import musictoolbox.cmd.doreplaygain
+from musictoolbox.logging import basicConfig
+
+basicConfig(main_module_name="musictoolbox.cmd.doreplaygain", level=logging.DEBUG)
+
+sys.exit(musictoolbox.cmd.doreplaygain.main())
