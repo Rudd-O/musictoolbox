@@ -138,9 +138,9 @@ def main() -> int:
                 return ret
             for album, files in album_files.items():
                 if album is None:
-                    _LOGGER.info(f"For singles {album}:")
+                    _LOGGER.info(f"* For singles {album}:")
                 else:
-                    _LOGGER.info(f"For album {album}:")
+                    _LOGGER.info(f"* For album {album}:")
                 r = subprocess.call(["replaygain", "--show"] + files)
                 if r != 0:
                     ret = r
@@ -158,7 +158,7 @@ def main() -> int:
                     # If the file in the batch and has RG, ignore the batch
                     # unless explicitly instructed not to.
                     if args.force or any(tags[x].trackgain is None for x in batch):
-                        _LOGGER.info("Processing single track:")
+                        _LOGGER.info("* Processing single track:")
                         process = True
                 else:
                     # If all of the files file in the batch have equal album RG
@@ -167,7 +167,7 @@ def main() -> int:
                         z != w
                         for z, w in itertools.pairwise(tags[x].albumgain for x in batch)
                     ):
-                        _LOGGER.info(f"Processing album {album}:")
+                        _LOGGER.info(f"* Processing album {album}:")
                         process = True
                 if process:
                     ret = subprocess.call(
