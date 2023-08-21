@@ -106,9 +106,11 @@ def main() -> int:
         action="store_true",
         help="enable verbose operation",
     )
-    basicConfig(main_module_name=__name__, level=logging.DEBUG)
 
     args = p.parse_args()
+    basicConfig(
+        main_module_name=__name__, level=logging.DEBUG if args.verbose else logging.INFO
+    )
 
     allfiles = all_files(args.FILE, recursive=args.recursive)
 
