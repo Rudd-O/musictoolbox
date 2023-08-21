@@ -14,9 +14,9 @@ from ..interfaces import FileType
 
 
 try:
-    from pipes import quote
-except ImportError:
     from shlex import quote
+except ImportError:
+    from pipes import quote
 
 try:
     from urllib.request import pathname2url
