@@ -49,7 +49,6 @@ class AlbumIdentifier(object):
         if from_disk_metadata is None:
             return klass(False, "", None, None)
         album_id = get_album_id(from_disk_metadata)
-        albumgain = None
         try:
             trackgain, albumgain = _MAPPER.read_gain(ff)
         except Exception as exc:
