@@ -1,10 +1,15 @@
 import argparse
+import io
 import collections
 import itertools
 import logging
+import pickle
 import os
 import sys
 import typing
+import xdg.BaseDirectory
+import fcntl
+import contextlib
 from musictoolbox.logging import basicConfig
 
 from mutagen import File
@@ -16,6 +21,127 @@ KEY_ALBUMARTIST = "albumartist"
 KEY_ARTIST = "artist"
 
 # ======= mp3gain and soundcheck operations ==========
+
+
+T = typing.TypeVar("T", bound="TrackMetadata")
+
+
+class TrackMetadata(object):
+    album: list[str] | None
+    artist: list[str] | None
+    albumartist: list[str] | None
+    modtime: float
+
+    def __init__(
+        self,
+        valid: bool,
+        album: list[str],
+        artist: list[str],
+        albumartist: list[str],
+        modtime: float,
+    ) -> None:
+        self.valid = valid
+        self.album = album
+        self.albumartist = albumartist
+        self.artist = artist
+        self.modtime = modtime
+
+    @classmethod
+    def from_file(klass: typing.Type[T], ff: str, modtime: float) -> T:
+        try:
+            from_disk_metadata = File(ff, easy=True)
+        except Exception as exc:
+            print(f"Error identifying {ff}: {exc}", file=sys.stderr)
+            from_disk_metadata = None
+        if from_disk_metadata is None:
+            return klass(False, [], [], [], modtime)
+        return klass(
+            True,
+            album=from_disk_metadata.get(KEY_ALBUM),
+            artist=from_disk_metadata.get(KEY_ARTIST),
+            albumartist=from_disk_metadata.get(KEY_ALBUMARTIST),
+            modtime=modtime,
+        )
+
+
+class TrackMetadataCache(object):
+    def __init__(self) -> None:
+        self.__store: dict[str, TrackMetadata] = {}
+        self.__dirty = False
+
+    def update_metadata_for(self, allfiles: list[str]) -> None:
+        dirty = False
+        for ff in allfiles:
+            ff = os.path.abspath(ff)
+            try:
+                modtime = os.stat(ff).st_mtime
+            except Exception as exc:
+                print(f"Error examining {ff}: {exc}", file=sys.stderr)
+                continue
+            if ff in self.__store and self.__store[ff].modtime >= modtime:
+                # print(f"No need to update cache for file {ff}")
+                continue
+            # print(
+            #    f"Updated cache for file {ff} {modtime} "
+            #    f"{self.__store[ff].modtime if ff in self.__store else None}"
+            # )
+            metadata = TrackMetadata.from_file(ff, modtime)
+            self.__store[ff] = metadata
+            dirty = True
+        self.__dirty = dirty
+
+    def __getitem__(self, key: str) -> TrackMetadata:
+        key = os.path.abspath(key)
+        return self.__store[key]
+
+    def has_key(self, key: str) -> bool:
+        key = os.path.abspath(key)
+        return key in self.__store
+
+    def get(self, key: str) -> TrackMetadata | None:
+        key = os.path.abspath(key)
+        return self.__store.get(key)
+
+    def mark_clean(self) -> None:
+        self.__dirty = False
+
+    def is_dirty(self) -> bool:
+        return self.__dirty
+
+
+@contextlib.contextmanager
+def cached_metadata() -> typing.Generator[TrackMetadataCache, None, None]:
+    f: io.BufferedReader | None = None
+    p = xdg.BaseDirectory.save_cache_path("musictoolbox")
+    path = os.path.join(p, "scanalbumartists.pickle")
+
+    metadata = TrackMetadataCache()
+    fsize = 0
+    try:
+        f = open(path, "a+b")
+        fcntl.flock(f, fcntl.LOCK_EX)
+        fsize = os.stat(path).st_size
+        f.seek(0, 0)
+    except Exception as exc:
+        if not isinstance(exc, FileNotFoundError):
+            print(f"Error opening cache from {path}: {exc}", file=sys.stderr)
+
+    if f and fsize:
+        try:
+            metadata = typing.cast(TrackMetadataCache, pickle.load(f))
+        except Exception as exc:
+            print(f"Error loading cache from {path}: {exc}", file=sys.stderr)
+
+    yield metadata
+
+    if f and metadata.is_dirty():
+        metadata.mark_clean()
+        # print(f"Saving cache to {path}", file=sys.stderr)
+        f.seek(0, 0)
+        f.truncate()
+        pickle.dump(metadata, f)
+        f.flush()
+        f.close()
 
 
 def main() -> int:
@@ -48,114 +174,99 @@ def main() -> int:
             files = [f]
         allfiles.extend(files)
 
-    tags: dict[str, typing.Any] = {}
-    for ff in allfiles:
-        try:
-            metadata = File(ff, easy=True)
-        except Exception as exc:
-            print(f"Error identifying {ff}: {exc}", file=sys.stderr)
-            continue
-        if metadata is None:
-            continue
-        tags[ff] = metadata
+    with cached_metadata() as tags:
+        tags.update_metadata_for(allfiles)
 
-    album_tree: dict[
-        str, dict[str | None, dict[str | None, dict[str | None, list[str]]]]
-    ] = collections.defaultdict(
-        lambda: collections.defaultdict(
-            lambda: collections.defaultdict(lambda: collections.defaultdict(list))
+        album_tree: dict[
+            str, dict[str | None, dict[str | None, dict[str | None, list[str]]]]
+        ] = collections.defaultdict(
+            lambda: collections.defaultdict(
+                lambda: collections.defaultdict(lambda: collections.defaultdict(list))
+            )
         )
-    )
 
-    for fn, tag in tags.items():
-        folder = os.path.dirname(fn)
-        album = tag.get(KEY_ALBUM)
-        artist = tag.get(KEY_ARTIST)
-        albumartist = tag.get(KEY_ALBUMARTIST)
-        if not album:
-            continue
-        if album:
-            album = album[0]
-        if artist:
-            artist = artist[0]
-        if albumartist:
-            albumartist = albumartist[0]
-        try:
-            album_tree[folder][album][albumartist][artist].append(fn)
-        except Exception:
-            assert 0, (folder, album, albumartist, artist, fn)
+        for fn in allfiles:
+            tag = tags.get(fn)
+            if not tag:
+                continue
 
-    for folder, data in sorted(album_tree.items()):
-        for album, albumartists_data in data.items():
-            problems = []
-            if None in albumartists_data and len(albumartists_data[None]) > 1:
-                problems.append(
-                    "This album has more than one artist but no album artist"
-                )
-            if len(albumartists_data) > 1:
-                problems.append("This album has more than one album artist")
-            if problems:
-                print(f"{folder}:")
-                print(f"  {album}:")
-                for problem in problems:
-                    print(f"    {problem}")
-                files_to_fix = [
-                    f
-                    for _, artistdata in albumartists_data.items()
-                    for _, artist_files in artistdata.items()
-                    for f in artist_files
-                ]
+            folder = os.path.dirname(fn)
+            album = tag.album[0] if tag.album else None
+            if not album:
+                continue
+            artist = tag.artist[0] if tag.artist else None
+            albumartist = tag.albumartist[0] if tag.albumartist else None
+            try:
+                album_tree[folder][album][albumartist][artist].append(fn)
+            except Exception:
+                assert 0, (folder, album, albumartist, artist, fn)
 
-                def dumpfiles(header: str) -> None:
-                    print(f"    {header}:")
-                    for f in files_to_fix:
-                        print(f"      {f}")
-
-                va_text = args.various_artists_tag
-                if va_text == "auto":
-                    artists = [
-                        "" if a is None else a
+        for folder, data in sorted(album_tree.items()):
+            for album, albumartists_data in data.items():
+                problems = []
+                if None in albumartists_data and len(albumartists_data[None]) > 1:
+                    problems.append(
+                        "This album has more than one artist but no album artist"
+                    )
+                if len(albumartists_data) > 1:
+                    problems.append("This album has more than one album artist")
+                if problems:
+                    print(f"{folder}:")
+                    print(f"  {album}:")
+                    for problem in problems:
+                        print(f"    {problem}")
+                    files_to_fix = [
+                        f
                         for _, artistdata in albumartists_data.items()
-                        for a, artist_files in artistdata.items()
-                        for _ in artist_files
+                        for _, artist_files in artistdata.items()
+                        for f in artist_files
                     ]
-                    popular_artists = sorted(
-                        [
-                            (x, len(list(y)))
-                            for x, y in itertools.groupby(sorted(artists))
-                        ],
-                        key=lambda g: -g[1],
-                    )
-                    va_text = popular_artists[0][0]
-                    if (
-                        len(popular_artists) > 1
-                        and popular_artists[0][1] == popular_artists[1][1]
-                    ):
-                        va_text = None
-                if va_text is None:
-                    dumpfiles("Cannot determine album artist, skipping these files")
-                    continue
 
-                if args.fix:
-                    print(f"    Adding album artist {va_text} among {popular_artists}")
-                    for f in files_to_fix:
-                        tag = tags[f]
-                        tag[KEY_ALBUMARTIST] = [va_text]
-                        tag.save()
-                    dumpfiles("Files fixed")
-                else:
-                    dumpfiles("Files to fix")
-                    print(
-                        f"    Would add the album artist {va_text}"
-                        f" among {popular_artists}"
-                    )
+                    def dumpfiles(header: str) -> None:
+                        print(f"    {header}:")
+                        for f in files_to_fix:
+                            print(f"      {f}")
 
-            # for albumartist, artistdata in albumartists_data.items():
-            #    print(f"    {albumartist}:")
-            #    for artist, files in artistdata.items():
-            #        print(f"      {artist}:")
-            #        for f in files:
-            #            print(f"        {f}")
+                    va_text = args.various_artists_tag
+                    if va_text == "auto":
+                        artists = [
+                            "" if a is None else a
+                            for _, artistdata in albumartists_data.items()
+                            for a, artist_files in artistdata.items()
+                            for _ in artist_files
+                        ]
+                        popular_artists = sorted(
+                            [
+                                (x, len(list(y)))
+                                for x, y in itertools.groupby(sorted(artists))
+                            ],
+                            key=lambda g: -g[1],
+                        )
+                        va_text = popular_artists[0][0]
+                        if (
+                            len(popular_artists) > 1
+                            and popular_artists[0][1] == popular_artists[1][1]
+                        ):
+                            va_text = None
+                    if va_text is None:
+                        dumpfiles("Cannot determine album artist, skipping these files")
+                        continue
+
+                    if args.fix:
+                        print(
+                            f"    Adding album artist {va_text} among {popular_artists}"
+                        )
+                        for f in files_to_fix:
+                            savetag = File(f, easy=True)
+                            savetag[KEY_ALBUMARTIST] = [va_text]
+                            savetag.save()
+                        dumpfiles("Files fixed")
+                    else:
+                        dumpfiles("Files to fix")
+                        print(
+                            f"    Would add the album artist {va_text}"
+                            f" among {popular_artists}"
+                        )
 
     return 0
 
