@@ -10,7 +10,7 @@ from musictoolbox.logging import basicConfig
 from musictoolbox.cache import FileMetadataCache, OnDiskMetadataCache
 from musictoolbox.files import all_files
 
-from mutagen import File
+from mutagen._file import File
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class TrackMetadata(object):
         )
 
 
-def main() -> int:
+def main() -> None:
     p = argparse.ArgumentParser(
         description="Determine which albums exist and if they are properly tagged."
     )
@@ -189,8 +189,8 @@ def main() -> int:
                             f" among {popular_artists}"
                         )
 
-    return 0
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

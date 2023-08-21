@@ -53,13 +53,18 @@ def vfatprotect(f: str) -> str:
 
 def get_mptypes() -> typing.Dict[str, str]:
     """Return a mapping of mount points and their file system types."""
-    return dict([(p.mountpoint, p.fstype) for p in psutil.disk_partitions()])
+    ret = dict([(p.mountpoint, p.fstype) for p in psutil.disk_partitions()])
+    if "/" not in ret:
+        # Testing environment, probably.
+        # Add fallback to fix test.
+        ret["/"] = "ext4"
+    return ret
 
 
 def get_fstype(
     p: AbsolutePath, mptypes: typing.Dict[str, str]
 ) -> typing.Tuple[str, AbsolutePath]:
-    """Return the file system type corresponding to a path, along with the file system's mount point."""
+    """Return the file system type and mount point corresponding to a path."""
     assert os.name != "nt"
     for deepest_mountpoint in p.parents:
         if deepest_mountpoint.as_posix() in mptypes:
@@ -152,8 +157,8 @@ class Conflict(SyncError):
 
     def __str__(self) -> str:
         return (
-            "<Conflict: file %s cannot be synced to %s because %s was already synced there>"
-            % (self.source, self.target, self.predecessor)
+            f"<Conflict: file {self.source} cannot be synced to {self.target}"
+            f" because {self.predecessor} was already there>"
         )
 
     def __eq__(self, other: typing.Any) -> bool:

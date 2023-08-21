@@ -23,6 +23,7 @@ try:
 except ImportError:
     from urllib import pathname2url  # type:ignore
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +36,7 @@ def sort_gst_candidates(candidates: List[str]) -> List[str]:
 
     def getver(
         v: str,
-    ) -> Union[None, packaging.version.Version, packaging.version.LegacyVersion]:
+    ) -> None | packaging.version._BaseVersion:
         try:
             return packaging.version.parse(v)
         except packaging.version.InvalidVersion:

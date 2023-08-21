@@ -315,7 +315,7 @@ def run_sync(
     return ret
 
 
-def main(argv: typing.Optional[typing.List[str]] = None) -> int:
+def main(argv: typing.Optional[typing.List[str]] = None) -> None:
     """Command line options."""
 
     if argv is None:
@@ -334,18 +334,20 @@ def main(argv: typing.Optional[typing.List[str]] = None) -> int:
         level = logging.WARNING
     basicConfig(__name__, level)
 
-    return run_sync(
-        dryrun=args.dryrun,
-        playlists=args.playlists or [],
-        concurrency=args.concurrency,
-        destpath=args.destpath,
-        delete=args.delete,
-        exclude_beneath=args.exclude or [],
-        configfile=args.config_file,
-        profilefile=args.profile_file,
-        force_vfat=args.force_vfat,
+    sys.exit(
+        run_sync(
+            dryrun=args.dryrun,
+            playlists=args.playlists or [],
+            concurrency=args.concurrency,
+            destpath=args.destpath,
+            delete=args.delete,
+            exclude_beneath=args.exclude or [],
+            configfile=args.config_file,
+            profilefile=args.profile_file,
+            force_vfat=args.force_vfat,
+        )
     )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

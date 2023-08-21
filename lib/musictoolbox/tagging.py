@@ -115,6 +115,7 @@ def transfer_tags_mp3(origin, destination):
         )
 
 
+# FIXME: IMPLEMENT TRANSFER OF TAGS FROM VIDEOS
 tag_transfer_functions = {
     "mp3:mp3": lambda x, y, _, __: transfer_tags_mp3(x, y),
     "mp3:aac": lambda x, y, _, __: transfer_tags_mp3(x, y),

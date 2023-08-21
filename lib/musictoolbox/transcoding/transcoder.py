@@ -6,7 +6,7 @@ import tempfile
 from threading import Lock
 import typing
 
-from networkx import MultiDiGraph  # type: ignore
+from networkx import MultiDiGraph
 
 from . import policies as pol, registry as reg
 from .. import files
@@ -26,8 +26,8 @@ class NoPipeline(Exception):
 
     def __str__(self) -> str:
         return (
-            "<Transcoding: file %s cannot be transcoded by any codec pipeline according to configuration>"
-            % (self.source,)
+            f"<Transcoding: file {self.source} cannot be transcoded by any"
+            " codec pipeline according to configuration>"
         )
 
 

@@ -5,13 +5,13 @@ import os
 import sys
 import typing
 
-import mutagen
+from mutagen._file import File
 
 from ..logging import basicConfig
 
 
 def sort_by_track_number(paths: typing.List[str]) -> typing.List[str]:
-    metadatas = [(f, mutagen.File(f)) for f in paths]
+    metadatas = [(f, File(f)) for f in paths]
     relevant = []
     relevant.extend(
         [(int(m["tracknumber"][0]), f, m) for f, m in metadatas if "tracknumber" in m]
@@ -77,11 +77,11 @@ def get_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
+def main() -> None:
     basicConfig(main_module_name=__name__, level=logging.WARNING)
 
     parser = get_parser()
     args = parser.parse_args()
 
     make_album_playlist(args.playlist[0], args.paths, dryrun=args.dryrun)
-    return 0
+    sys.exit(0)

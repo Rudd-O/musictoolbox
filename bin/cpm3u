@@ -1,8 +1,0 @@
-#!/usr/bin/python3
-
-import sys
-
-import musictoolbox.cmd.cpm3u
-
-
-sys.exit(musictoolbox.cmd.cpm3u.main())

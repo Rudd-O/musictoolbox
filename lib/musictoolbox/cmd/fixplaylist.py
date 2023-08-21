@@ -6,7 +6,7 @@ import typing
 from musictoolbox.logging import basicConfig
 
 
-def main() -> int:
+def main() -> None:
     basicConfig(main_module_name=__name__, level=logging.DEBUG)
 
     replacements: typing.Dict[str, str] = {}
@@ -47,4 +47,4 @@ def main() -> int:
             os.rename(fn, fn + "~")
             os.rename(fn + ".new", fn)
 
-    return 0
+    sys.exit(0)

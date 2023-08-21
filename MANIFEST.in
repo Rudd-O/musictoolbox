@@ -1,2 +1,5 @@
 include README.md
 include TODO
+include musictoolbox.spec
+include mypy.ini
+include tox.ini

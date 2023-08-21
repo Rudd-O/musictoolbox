@@ -1,11 +1,12 @@
 import argparse
 import logging
 import os
+import sys
 
 from ..logging import basicConfig
 
 
-def main() -> int:
+def main() -> None:
 
     basicConfig(main_module_name=__name__, level=logging.DEBUG)
     p = argparse.ArgumentParser(
@@ -62,4 +63,4 @@ def main() -> int:
             with open(out_file, "w") as out_:
                 out_.write(new_text)
 
-    return 0
+    sys.exit(0)

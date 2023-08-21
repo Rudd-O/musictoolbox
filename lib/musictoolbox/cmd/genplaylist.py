@@ -134,7 +134,7 @@ class OutputWriter(object):
                     raise
 
 
-def main() -> int:
+def main() -> None:
     parser = get_parser()
     args = parser.parse_args()
     playlist = args.playlist
@@ -177,4 +177,4 @@ def main() -> int:
     playlistfile.flush()
     playlistfile.close()
 
-    return 0
+    sys.exit(0)

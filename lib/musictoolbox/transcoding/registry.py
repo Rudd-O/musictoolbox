@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple, Set, Type, Protocol, Any
 
 import pkg_resources  # type: ignore
 
-import networkx as nx  # type: ignore
+import networkx as nx
 
 from .interfaces import (
     FileType,
@@ -89,11 +89,6 @@ class TranscoderRegistry(object):
     transcoders: Dict[TranscoderName, TranscoderProtocol] = {}
 
     def __init__(self, transcoder_settings: TranscoderSettings):
-        # FIXME: the following import should be done with a zope interfaces registry,
-        # and the Zope component architecture, since  the classes have already been
-        # registered as TranscoderProtocol.
-        from . import codecs  # @UnusedImport
-
         if not self.__class__.loaded_entry_points:
             for ep in pkg_resources.iter_entry_points(
                 group="musictoolbox.transcoding.codecs"

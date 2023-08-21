@@ -2,15 +2,15 @@ from __future__ import print_function
 
 import logging
 import typing
+import sys
 
+from musictoolbox.logging import basicConfig
 from mutagen.apev2 import APEv2
 from mutagen.id3 import ID3
-from mutagen import File
+from mutagen._file import File
 
 logger = logging.getLogger(__name__)
 
-
-# ======= mp3gain and soundcheck operations ==========
 
 REPLAYGAIN_TAGS = (
     "replaygain_track_gain",
@@ -28,7 +28,9 @@ def printpairs(toprint: list[tuple[str, typing.Any]]) -> None:
         print(key_tpl % key, "  ", repr(tag))
 
 
-def viewmp3norm(files: list[str]) -> None:
+def viewmp3norm() -> None:
+    basicConfig(main_module_name=__name__, level=logging.DEBUG)
+    files: list[str] = sys.argv[1:]
     while files:
         file = files.pop(0)
 
@@ -47,8 +49,9 @@ def viewmp3norm(files: list[str]) -> None:
             apetags = None
 
         toprint: list[tuple[str, typing.Any]] = []
-        for key, tag in list(apetags.items()):
-            toprint.append((key, tag))
+        if apetags:
+            for key, tag in list(apetags.items()):
+                toprint.append((key, tag))
         if toprint:
             print("===APE tags====")
             printpairs(toprint)
@@ -69,7 +72,9 @@ def viewmp3norm(files: list[str]) -> None:
             printpairs(toprint)
 
 
-def viewtags(files: typing.List[str]) -> None:
+def viewtags() -> None:
+    basicConfig(main_module_name=__name__, level=logging.DEBUG)
+    files: list[str] = sys.argv[1:]
     while files:
         file = files.pop(0)
 
@@ -100,6 +105,3 @@ def viewtags(files: typing.List[str]) -> None:
             for key, tag in list(tags.items()):
                 toprint.append((key, tag))
             printpairs(toprint)
-
-
-# algorithm begins here

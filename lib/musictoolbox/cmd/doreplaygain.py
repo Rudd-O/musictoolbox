@@ -3,6 +3,7 @@ import collections
 import itertools
 import logging
 import subprocess
+import sys
 import typing
 import concurrent.futures
 import os
@@ -10,7 +11,7 @@ import os
 from musictoolbox.cache import FileMetadataCache, OnDiskMetadataCache
 from musictoolbox.files import all_files
 from musictoolbox.logging import basicConfig
-from mutagen import File
+from mutagen._file import File
 from rgain3.albumid import get_album_id
 from rgain3 import rgio, GainData
 
@@ -65,7 +66,7 @@ class AlbumIdentifier(object):
         )
 
 
-def main() -> int:
+def main() -> None:
     p = argparse.ArgumentParser(
         description="Collection-wide frontend for replaygain (of python-rgain3 fame).",
         epilog="This program"
@@ -144,7 +145,7 @@ def main() -> int:
 
         if args.show:
             if not album_files:
-                return ret
+                sys.exit(0)
             for album, files in album_files.items():
                 if album is None:
                     _LOGGER.info(f"* For singles {album}:")
@@ -153,7 +154,7 @@ def main() -> int:
                 r = subprocess.call(["replaygain", "--show"] + files)
                 if r != 0:
                     ret = r
-            return ret
+            sys.exit(0)
 
         t = concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism)
         future_to_result = {}
@@ -208,4 +209,4 @@ def main() -> int:
                 future.cancel()
             raise
 
-        return ret
+    sys.exit(ret)

@@ -1,9 +1,0 @@
-#!/usr/bin/python3
-
-import sys
-import musictoolbox.cmd.detect
-from musictoolbox.logging import basicConfig
-
-basicConfig(main_module_name="musictoolbox.cmd.detect", level=logging.DEBUG)
-
-musictoolbox.cmd.detect.detect_broken_ape_tags(sys.argv[1:])

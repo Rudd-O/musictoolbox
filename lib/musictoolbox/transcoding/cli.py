@@ -7,7 +7,7 @@ import sys
 import tempfile
 from typing import Optional
 
-from networkx import drawing, MultiDiGraph  # type: ignore
+from networkx import drawing, MultiDiGraph
 
 from . import config, policies, transcoder, registry
 from ..logging import basicConfig
@@ -101,7 +101,7 @@ def main() -> Optional[int]:
 
     if opts.plot:
         plot_transcoder_pipelines(graph)
-        return 0
+        sys.exit(0)
     elif opts.dry_run:
         for nn, path in enumerate(selected_paths):
             print(
@@ -115,21 +115,21 @@ def main() -> Optional[int]:
             print(
                 "No transcoder pipelines found for the involved file formats the constraints from configuration or parameters."
             )
-        return 4
+        sys.exit(4)
     elif not dst:
         print(
             "The destination file name cannot be empty if --plot or --dry-run weren't requested.",
             file=sys.stderr,
         )
-        return os.EX_USAGE
+        sys.exit(os.EX_USAGE)
     elif not selected_paths:
         print(
             "Cannot transcode %s -- no transcoding pipelines found for the involved file formats from configuration or parameters."
             % src,
             file=sys.stderr,
         )
-        return 4
+        sys.exit(4)
 
     syncer = transcoder.SingleItemSyncer(transfer_tags)
     syncer.sync(src, dst, selected_paths[0])
-    return 0
+    sys.exit(0)
