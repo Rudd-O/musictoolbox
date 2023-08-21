@@ -1,12 +1,8 @@
-import contextlib
-import logging
 import os
+import typing
+import contextlib
 from pathlib import Path
 from threading import Lock
-import typing
-
-
-logger = logging.getLogger(__name__)
 
 
 AbsolutePath = typing.NewType("AbsolutePath", Path)
@@ -62,3 +58,23 @@ def shorten_to_name_max(directory: str, name: str, strip_extra_chars: int) -> st
     maxfilenamelen = os.pathconf(pathconf_directory, "PC_NAME_MAX")
     name = name[: maxfilenamelen - strip_extra_chars]
     return name
+
+
+def all_files(paths: list[str], recursive: bool = True) -> list[str]:
+    allfiles: list[str] = []
+    for f in paths:
+        if os.path.isdir(f):
+            if recursive:
+                files = [
+                    os.path.join(root, x) for root, _, fs in os.walk(f) for x in fs
+                ]
+            else:
+                files = [
+                    os.path.join(f, x)
+                    for x in os.listdir(f)
+                    if not os.path.isdir(os.path.join(f, x))
+                ]
+        else:
+            files = [f]
+        allfiles.extend(files)
+    return allfiles

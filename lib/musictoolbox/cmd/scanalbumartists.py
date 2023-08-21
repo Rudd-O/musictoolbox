@@ -1,17 +1,14 @@
 import argparse
-import io
 import collections
 import itertools
 import logging
-import pickle
 import collections.abc
 import os
 import sys
 import typing
-import xdg.BaseDirectory
-import fcntl
-import contextlib
 from musictoolbox.logging import basicConfig
+from musictoolbox.cache import FileMetadataCache, OnDiskMetadataCache
+from musictoolbox.files import all_files
 
 from mutagen import File
 
@@ -20,18 +17,15 @@ _LOGGER = logging.getLogger(__name__)
 KEY_ALBUM = "album"
 KEY_ALBUMARTIST = "albumartist"
 KEY_ARTIST = "artist"
+CACHE_VERSION = 3
 
-# ======= mp3gain and soundcheck operations ==========
-
-
-T = typing.TypeVar("T", bound="TrackMetadata")
+TM = typing.TypeVar("TM", bound="TrackMetadata")
 
 
 class TrackMetadata(object):
     album: list[str] | None
     artist: list[str] | None
     albumartist: list[str] | None
-    modtime: float
 
     def __init__(
         self,
@@ -46,7 +40,7 @@ class TrackMetadata(object):
         self.artist = artist
 
     @classmethod
-    def from_file(klass: typing.Type[T], ff: str) -> T:
+    def from_file(klass: typing.Type[TM], ff: str) -> TM:
         try:
             from_disk_metadata = File(ff, easy=True)
         except Exception as exc:
@@ -60,95 +54,6 @@ class TrackMetadata(object):
             artist=from_disk_metadata.get(KEY_ARTIST),
             albumartist=from_disk_metadata.get(KEY_ALBUMARTIST),
         )
-
-
-C = typing.TypeVar("C")
-
-
-class FileMetadataCache(typing.Generic[C]):
-    def __init__(self, cache_item_factory: collections.abc.Callable[[str], C]) -> None:
-        self.__factory = cache_item_factory
-        self.__store: dict[str, tuple[float, C]] = {}
-        self.__dirty = False
-
-    def update_metadata_for(self, allfiles: list[str]) -> None:
-        dirty = False
-        for ff in allfiles:
-            ff = os.path.abspath(ff)
-            try:
-                modtime = os.stat(ff).st_mtime
-            except Exception as exc:
-                _LOGGER.error("Error examining %s: %s", ff, exc)
-                continue
-            if ff in self.__store and self.__store[ff][0] >= modtime:
-                if _LOGGER.level <= logging.DEBUG:
-                    _LOGGER.debug("No need to update cache for file %s", ff)
-                continue
-            if _LOGGER.level <= logging.DEBUG:
-                _LOGGER.debug("Updated cache for file %s at mod time %s", ff, modtime)
-            metadata = self.__factory(ff)
-            self.__store[ff] = (modtime, metadata)
-            dirty = True
-        self.__dirty = dirty
-
-    def __getitem__(self, key: str) -> C:
-        key = os.path.abspath(key)
-        return self.__store[key][1]
-
-    def has_key(self, key: str) -> bool:
-        key = os.path.abspath(key)
-        return key in self.__store
-
-    def get(self, key: str) -> C | None:
-        key = os.path.abspath(key)
-        m = self.__store.get(key)
-        if m is None:
-            return None
-        return m[1]
-
-    def mark_clean(self) -> None:
-        self.__dirty = False
-
-    def is_dirty(self) -> bool:
-        return self.__dirty
-
-
-@contextlib.contextmanager
-def cached_metadata() -> typing.Generator[FileMetadataCache[TrackMetadata], None, None]:
-    f: io.BufferedReader | None = None
-    p = xdg.BaseDirectory.save_cache_path("musictoolbox")
-    path = os.path.join(p, "scanalbumartists.pickle")
-
-    metadata = FileMetadataCache(TrackMetadata.from_file)
-    fsize = 0
-    try:
-        if _LOGGER.level <= logging.DEBUG:
-            _LOGGER.debug("Loading cache from %s", path)
-        f = open(path, "a+b")
-        fcntl.flock(f, fcntl.LOCK_EX)
-        fsize = os.stat(path).st_size
-        f.seek(0, 0)
-    except Exception as exc:
-        if not isinstance(exc, FileNotFoundError):
-            _LOGGER.error("Error opening cache from %s: %s", path, exc)
-
-    if f and fsize:
-        try:
-            metadata = typing.cast(FileMetadataCache[TrackMetadata], pickle.load(f))
-        except Exception as exc:
-            _LOGGER.error("Error opening cache from %s: %s", path, exc)
-
-    yield metadata
-
-    if f and metadata.is_dirty():
-        metadata.mark_clean()
-        if _LOGGER.level <= logging.DEBUG:
-            _LOGGER.debug("Saving cache to %s", path)
-        f.seek(0, 0)
-        f.truncate()
-        pickle.dump(metadata, f)
-        f.flush()
-        f.close()
 
 
 def main() -> int:
@@ -183,15 +88,13 @@ def main() -> int:
         level=(logging.DEBUG if args.verbose else logging.INFO),
     )
 
-    allfiles: list[str] = []
-    for f in args.FILE:
-        if os.path.isdir(f):
-            files = [os.path.join(root, x) for root, _, fs in os.walk(f) for x in fs]
-        else:
-            files = [f]
-        allfiles.extend(files)
+    allfiles = all_files(args.FILE, recursive=True)
 
-    with cached_metadata() as tags:
+    with OnDiskMetadataCache(
+        "scanalbumartists.pickle",
+        CACHE_VERSION,
+        lambda: FileMetadataCache(TrackMetadata.from_file),
+    ) as tags:
         tags.update_metadata_for(allfiles)
 
         album_tree: dict[

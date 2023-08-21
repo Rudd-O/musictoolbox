@@ -1,20 +1,80 @@
 import argparse
+import collections
+import itertools
 import logging
-import mutagen
-import os
 import subprocess
-import sys
+import typing
 
+from musictoolbox.cache import FileMetadataCache, OnDiskMetadataCache
+from musictoolbox.files import all_files
 from musictoolbox.logging import basicConfig
+from mutagen import File
+from rgain3.albumid import get_album_id
+from rgain3 import rgio, GainData
+
+
+_LOGGER = logging.getLogger(__name__)
+_MAPPER = rgio.BaseFormatsMap()
+
+CACHE_VERSION = 6
+
+TM = typing.TypeVar("TM", bound="AlbumIdentifier")
+
+
+class AlbumIdentifier(object):
+    identifier: str
+    albumgain: GainData | None
+    trackgain: GainData | None
+
+    def __init__(
+        self,
+        valid: bool,
+        identifier: str,
+        albumgain: GainData | None,
+        trackgain: GainData | None,
+    ) -> None:
+        self.valid = valid
+        self.identifier = identifier
+        self.albumgain = albumgain
+        self.trackgain = trackgain
+
+    @classmethod
+    def from_file(klass: typing.Type[TM], ff: str) -> TM:
+        try:
+            from_disk_metadata = File(ff)
+        except Exception as exc:
+            _LOGGER.error("Error identifying %s: %s:", ff, exc)
+            from_disk_metadata = None
+        if from_disk_metadata is None:
+            return klass(False, "", None, None)
+        album_id = get_album_id(from_disk_metadata)
+        albumgain = None
+        try:
+            trackgain, albumgain = _MAPPER.read_gain(ff)
+        except Exception as exc:
+            _LOGGER.error("Cannot read ReplayGain from %s: %s>", ff, exc)
+        return klass(
+            True,
+            identifier=album_id,
+            trackgain=trackgain,
+            albumgain=albumgain,
+        )
 
 
 def main() -> int:
-    basicConfig(main_module_name=__name__, level=logging.DEBUG)
     p = argparse.ArgumentParser(
-        description="Frontend for replaygain (of python-rgain3 fame).  This program"
+        description="Collection-wide frontend for replaygain (of python-rgain3 fame).",
+        epilog="This program"
         " helps you add ReplayGain information to music in an intelligent fashion,"
         " grouping songs by album so album ReplayGain information is calculated"
         " correctly with respect to all other tracks in the album."
+        "\n\n"
+        "This program is similar to the rgain3 program `collectiongain` but it"
+        " decides which files to group as an album in a different way, and will not"
+        " operate recursively by default."
+        "\n\n"
+        "To ensure optimum operation, use the program scanalbumartists prior to"
+        " running this program, to ensure all your album artist tags are consistent.",
     )
     p.add_argument("FILE", type=str, nargs="+", help="file to operate on")
     p.add_argument(
@@ -40,68 +100,77 @@ def main() -> int:
         action="store_true",
         help="force recalculation even if files already contain that information",
     )
+    p.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="enable verbose operation",
+    )
+    basicConfig(main_module_name=__name__, level=logging.DEBUG)
 
     args = p.parse_args()
 
-    allfiles = []
-    for f in args.FILE:
-        if os.path.isdir(f):
-            if args.recursive:
-                files = [
-                    os.path.join(root, x) for root, _, fs in os.walk(f) for x in fs
-                ]
+    allfiles = all_files(args.FILE, recursive=args.recursive)
+
+    with OnDiskMetadataCache(
+        "doreplaygain.pickle",
+        CACHE_VERSION,
+        lambda: FileMetadataCache(AlbumIdentifier.from_file),
+    ) as tags:
+        tags.update_metadata_for(allfiles)
+
+        album_files: dict[str, list[str]] = collections.defaultdict(list)
+
+        for f in allfiles:
+            id_ = tags.get(f)
+            if not id_ or not id_.valid:
+                continue
+            album_files[id_.identifier].append(f)
+
+        ret = 0
+
+        if args.show:
+            if not album_files:
+                return ret
+            for album, files in album_files.items():
+                if album is None:
+                    _LOGGER.info(f"For singles {album}:")
+                else:
+                    _LOGGER.info(f"For album {album}:")
+                r = subprocess.call(["replaygain", "--show"] + files)
+                if r != 0:
+                    ret = r
+            return ret
+
+        for album, filegroup in album_files.items():
+            if not album:
+                batches = [[x] for x in filegroup]
             else:
-                files = [
-                    os.path.join(f, x)
-                    for x in os.listdir(f)
-                    if not os.path.isdir(os.path.join(f, x))
-                ]
-        else:
-            files = [f]
-        allfiles.extend(files)
+                batches = [filegroup]
+            for batch in batches:
+                process = False
+                noalbum = not album or len(batch) < 2
+                if noalbum:
+                    if args.force or any(tags[x].trackgain is None for x in batch):
+                        _LOGGER.info(f"Processing single track {album}:")
+                        process = True
+                else:
+                    if args.force or any(
+                        z != w
+                        for z, w in itertools.pairwise(tags[x].albumgain for x in batch)
+                    ):
+                        _LOGGER.info(f"Processing album {album}:")
+                        process = True
+                if process:
+                    ret = subprocess.call(
+                        ["replaygain"]
+                        + (["--dry-run"] if args.dry_run else [])
+                        + ["--force"]
+                        + (["--no-album"] if noalbum else [])
+                        + batch
+                    )
+                    if ret != 0:
+                        break
+                    tags.update_metadata_for(batch)
 
-    files_album: dict[str, str | None] = {}
-    for ff in allfiles:
-        try:
-            metadata = mutagen.File(ff, easy=True)
-        except Exception as exc:
-            print(f"Error identifying {ff}: {exc}", file=sys.stderr)
-            continue
-        if metadata is None:
-            continue
-        try:
-            album = metadata.get("album", [None])[0]
-        except IndexError:
-            album = None
-        files_album[ff] = album.lower() if album else None
-
-    album_files: dict[str | None, list[str]] = {}
-    for f, alb in files_album.items():
-        if alb not in album_files:
-            album_files[alb] = []
-        album_files[alb].append(f)
-
-    if args.show:
-        if not files_album:
-            return 0
-        return subprocess.call(["replaygain", "--show"] + list(files_album.keys()))
-
-    ret = 0
-    for album, filegroup in album_files.items():
-        if not album:
-            batches = [[x] for x in filegroup]
-        else:
-            batches = [filegroup]
-        for batch in batches:
-            noalbum = not album or len(batch) < 2
-            ret = subprocess.call(
-                ["replaygain"]
-                + (["--dry-run"] if args.dry_run else [])
-                + (["--force"] if args.force else [])
-                + (["--no-album"] if noalbum else [])
-                + batch
-            )
-            if ret != 0:
-                break
-
-    return ret
+        return ret
