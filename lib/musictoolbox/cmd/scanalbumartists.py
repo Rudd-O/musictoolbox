@@ -277,6 +277,7 @@ def main() -> int:
                             savetag = File(f, easy=True)
                             savetag[KEY_ALBUMARTIST] = [va_text]
                             savetag.save()
+                        tags.update_metadata_for(files_to_fix)
                         dumpfiles("Files fixed")
                     else:
                         dumpfiles("Files to fix")
