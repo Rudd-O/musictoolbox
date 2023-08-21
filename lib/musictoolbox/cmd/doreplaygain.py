@@ -44,15 +44,15 @@ class AlbumIdentifier(object):
             from_disk_metadata = File(ff)
         except Exception as exc:
             _LOGGER.error("Error identifying %s: %s:", ff, exc)
-            from_disk_metadata = None
-        if from_disk_metadata is None:
             return klass(False, "", None, None)
         album_id = get_album_id(from_disk_metadata)
         albumgain = None
         try:
             trackgain, albumgain = _MAPPER.read_gain(ff)
         except Exception as exc:
+            # The file is not supported.  We return invalid.
             _LOGGER.error("Cannot read ReplayGain from %s: %s>", ff, exc)
+            return klass(False, "", None, None)
         return klass(
             True,
             identifier=album_id,
@@ -151,10 +151,14 @@ def main() -> int:
                 process = False
                 noalbum = not album or len(batch) < 2
                 if noalbum:
+                    # If the file in the batch and has RG, ignore the batch
+                    # unless explicitly instructed not to.
                     if args.force or any(tags[x].trackgain is None for x in batch):
-                        _LOGGER.info(f"Processing single track {album}:")
+                        _LOGGER.info("Processing single track:")
                         process = True
                 else:
+                    # If all of the files file in the batch have equal album RG
+                    # ignore the batch unless explicitly instructed not to.
                     if args.force or any(
                         z != w
                         for z, w in itertools.pairwise(tags[x].albumgain for x in batch)
