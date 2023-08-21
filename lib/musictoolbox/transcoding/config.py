@@ -3,7 +3,7 @@ import logging
 import os
 from typing import TextIO, Optional, List
 
-import xdg.BaseDirectory  # type: ignore
+import xdg.BaseDirectory
 import yaml  # type: ignore
 
 from .interfaces import TranscoderName, FileType

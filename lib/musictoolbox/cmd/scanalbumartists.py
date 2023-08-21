@@ -4,6 +4,7 @@ import collections
 import itertools
 import logging
 import pickle
+import collections.abc
 import os
 import sys
 import typing
@@ -38,35 +39,36 @@ class TrackMetadata(object):
         album: list[str],
         artist: list[str],
         albumartist: list[str],
-        modtime: float,
     ) -> None:
         self.valid = valid
         self.album = album
         self.albumartist = albumartist
         self.artist = artist
-        self.modtime = modtime
 
     @classmethod
-    def from_file(klass: typing.Type[T], ff: str, modtime: float) -> T:
+    def from_file(klass: typing.Type[T], ff: str) -> T:
         try:
             from_disk_metadata = File(ff, easy=True)
         except Exception as exc:
-            print(f"Error identifying {ff}: {exc}", file=sys.stderr)
+            _LOGGER.error("Error identifying %s: %s:", ff, exc)
             from_disk_metadata = None
         if from_disk_metadata is None:
-            return klass(False, [], [], [], modtime)
+            return klass(False, [], [], [])
         return klass(
             True,
             album=from_disk_metadata.get(KEY_ALBUM),
             artist=from_disk_metadata.get(KEY_ARTIST),
             albumartist=from_disk_metadata.get(KEY_ALBUMARTIST),
-            modtime=modtime,
         )
 
 
-class TrackMetadataCache(object):
-    def __init__(self) -> None:
-        self.__store: dict[str, TrackMetadata] = {}
+C = typing.TypeVar("C")
+
+
+class FileMetadataCache(typing.Generic[C]):
+    def __init__(self, cache_item_factory: collections.abc.Callable[[str], C]) -> None:
+        self.__factory = cache_item_factory
+        self.__store: dict[str, tuple[float, C]] = {}
         self.__dirty = False
 
     def update_metadata_for(self, allfiles: list[str]) -> None:
@@ -76,31 +78,33 @@ class TrackMetadataCache(object):
             try:
                 modtime = os.stat(ff).st_mtime
             except Exception as exc:
-                print(f"Error examining {ff}: {exc}", file=sys.stderr)
+                _LOGGER.error("Error examining %s: %s", ff, exc)
                 continue
-            if ff in self.__store and self.__store[ff].modtime >= modtime:
-                # print(f"No need to update cache for file {ff}")
+            if ff in self.__store and self.__store[ff][0] >= modtime:
+                if _LOGGER.level <= logging.DEBUG:
+                    _LOGGER.debug("No need to update cache for file %s", ff)
                 continue
-            # print(
-            #    f"Updated cache for file {ff} {modtime} "
-            #    f"{self.__store[ff].modtime if ff in self.__store else None}"
-            # )
-            metadata = TrackMetadata.from_file(ff, modtime)
-            self.__store[ff] = metadata
+            if _LOGGER.level <= logging.DEBUG:
+                _LOGGER.debug("Updated cache for file %s at mod time %s", ff, modtime)
+            metadata = self.__factory(ff)
+            self.__store[ff] = (modtime, metadata)
             dirty = True
         self.__dirty = dirty
 
-    def __getitem__(self, key: str) -> TrackMetadata:
+    def __getitem__(self, key: str) -> C:
         key = os.path.abspath(key)
-        return self.__store[key]
+        return self.__store[key][1]
 
     def has_key(self, key: str) -> bool:
         key = os.path.abspath(key)
         return key in self.__store
 
-    def get(self, key: str) -> TrackMetadata | None:
+    def get(self, key: str) -> C | None:
         key = os.path.abspath(key)
-        return self.__store.get(key)
+        m = self.__store.get(key)
+        if m is None:
+            return None
+        return m[1]
 
     def mark_clean(self) -> None:
         self.__dirty = False
@@ -110,33 +114,36 @@ class TrackMetadataCache(object):
 
 
 @contextlib.contextmanager
-def cached_metadata() -> typing.Generator[TrackMetadataCache, None, None]:
+def cached_metadata() -> typing.Generator[FileMetadataCache[TrackMetadata], None, None]:
     f: io.BufferedReader | None = None
     p = xdg.BaseDirectory.save_cache_path("musictoolbox")
     path = os.path.join(p, "scanalbumartists.pickle")
 
-    metadata = TrackMetadataCache()
+    metadata = FileMetadataCache(TrackMetadata.from_file)
     fsize = 0
     try:
+        if _LOGGER.level <= logging.DEBUG:
+            _LOGGER.debug("Loading cache from %s", path)
         f = open(path, "a+b")
         fcntl.flock(f, fcntl.LOCK_EX)
         fsize = os.stat(path).st_size
         f.seek(0, 0)
     except Exception as exc:
         if not isinstance(exc, FileNotFoundError):
-            print(f"Error opening cache from {path}: {exc}", file=sys.stderr)
+            _LOGGER.error("Error opening cache from %s: %s", path, exc)
 
     if f and fsize:
         try:
-            metadata = typing.cast(TrackMetadataCache, pickle.load(f))
+            metadata = typing.cast(FileMetadataCache[TrackMetadata], pickle.load(f))
         except Exception as exc:
-            print(f"Error loading cache from {path}: {exc}", file=sys.stderr)
+            _LOGGER.error("Error opening cache from %s: %s", path, exc)
 
     yield metadata
 
     if f and metadata.is_dirty():
         metadata.mark_clean()
-        # print(f"Saving cache to {path}", file=sys.stderr)
+        if _LOGGER.level <= logging.DEBUG:
+            _LOGGER.debug("Saving cache to %s", path)
         f.seek(0, 0)
         f.truncate()
         pickle.dump(metadata, f)
@@ -145,7 +152,6 @@ def cached_metadata() -> typing.Generator[TrackMetadataCache, None, None]:
 
 
 def main() -> int:
-    basicConfig(main_module_name=__name__, level=logging.DEBUG)
     p = argparse.ArgumentParser(
         description="Determine which albums exist and if they are properly tagged."
     )
@@ -164,7 +170,18 @@ def main() -> int:
         " from the most popular artist among the album",
         default="Various artists",
     )
+    p.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="enable verbose operation",
+    )
     args = p.parse_args()
+
+    basicConfig(
+        main_module_name=__name__,
+        level=(logging.DEBUG if args.verbose else logging.INFO),
+    )
 
     allfiles: list[str] = []
     for f in args.FILE:
