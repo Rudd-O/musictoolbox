@@ -40,10 +40,13 @@ class AlbumIdentifier(object):
 
     @classmethod
     def from_file(klass: typing.Type[TM], ff: str) -> TM:
+        from_disk_metadata = None
         try:
             from_disk_metadata = File(ff)
         except Exception as exc:
             _LOGGER.error("Error identifying %s: %s:", ff, exc)
+            return klass(False, "", None, None)
+        if from_disk_metadata is None:
             return klass(False, "", None, None)
         album_id = get_album_id(from_disk_metadata)
         albumgain = None
