@@ -4,6 +4,8 @@ import itertools
 import logging
 import subprocess
 import typing
+import concurrent.futures
+import os
 
 from musictoolbox.cache import FileMetadataCache, OnDiskMetadataCache
 from musictoolbox.files import all_files
@@ -103,6 +105,13 @@ def main() -> int:
         help="force recalculation even if files already contain that information",
     )
     p.add_argument(
+        "-p",
+        "--parallelism",
+        type=int,
+        help="how many replaygain processes to run at once (default %(default)s)",
+        default=os.cpu_count(),
+    )
+    p.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -146,6 +155,9 @@ def main() -> int:
                     ret = r
             return ret
 
+        t = concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism)
+        future_to_result = {}
+
         for album, filegroup in album_files.items():
             if not album:
                 batches = [[x] for x in filegroup]
@@ -158,7 +170,6 @@ def main() -> int:
                     # If the file in the batch and has RG, ignore the batch
                     # unless explicitly instructed not to.
                     if args.force or any(tags[x].trackgain is None for x in batch):
-                        _LOGGER.info("* Processing single track:")
                         process = True
                 else:
                     # If all of the files file in the batch have equal album RG
@@ -167,18 +178,34 @@ def main() -> int:
                         z != w
                         for z, w in itertools.pairwise(tags[x].albumgain for x in batch)
                     ):
-                        _LOGGER.info(f"* Processing album {album}:")
                         process = True
-                if process:
-                    ret = subprocess.call(
+                if not process:
+                    continue
+                future_to_result[
+                    t.submit(
+                        subprocess.call,
                         ["replaygain"]
                         + (["--dry-run"] if args.dry_run else [])
                         + ["--force"]
                         + (["--no-album"] if noalbum else [])
-                        + batch
+                        + batch,
                     )
-                    if ret != 0:
-                        break
+                ] = batch
+
+        try:
+            for future in concurrent.futures.as_completed(future_to_result):
+                batch = future_to_result[future]
+                ret = future.result()
+                if ret == 0:
                     tags.update_metadata_for(batch)
+                else:
+                    _LOGGER.error("Batch %s failed", batch)
+                    for future in future_to_result:
+                        future.cancel()
+                    break
+        except BaseException:
+            for future in future_to_result:
+                future.cancel()
+            raise
 
         return ret
