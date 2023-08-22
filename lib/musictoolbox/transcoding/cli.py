@@ -133,3 +133,7 @@ def main() -> Optional[int]:
     syncer = transcoder.SingleItemSyncer(transfer_tags)
     syncer.sync(src, dst, selected_paths[0])
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

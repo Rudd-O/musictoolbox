@@ -78,6 +78,7 @@ class TranscoderPolicy(object):
             or self.target == wildcard
             or not dsttype
             or self.target == dsttype
+            or self.transcode_to == dsttype
         )
         return match_src and match_dst
 
