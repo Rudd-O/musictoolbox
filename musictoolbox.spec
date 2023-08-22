@@ -22,10 +22,10 @@ This package contains utilities to curate music collections.}
 
 %description %_description
 
-%package -n python3-%{_name}
+%package -n %{_name}
 Summary:        %{summary}
 
-%description -n python3-%{_name} %_description
+%description -n %{_name} %_description
 
 %prep
 %autosetup -p1 -n %{_name}-%{version}
@@ -47,9 +47,21 @@ Summary:        %{summary}
 %check
 %tox
 
-%files -n python3-%{_name} -f %{pyproject_files}
+%files -n %{_name} -f %{pyproject_files}
 %doc README.md
-
+%{_bindir}/cpm3u
+%{_bindir}/detect-broken-ape-tags
+%{_bindir}/detect-missing-ape-tags
+%{_bindir}/doreplaygain
+%{_bindir}/fixplaylist
+%{_bindir}/genplaylist
+%{_bindir}/make-album-playlist
+%{_bindir}/removemusicbrainz
+%{_bindir}/scanalbumartists
+%{_bindir}/singlencode
+%{_bindir}/syncplaylists
+%{_bindir}/viewmp3norm
+%{_bindir}/viewtargs
 
 %changelog
 * Tue Aug 22 2023 Manuel Amador <rudd-o@rudd-o.com> 0.0.75-1
