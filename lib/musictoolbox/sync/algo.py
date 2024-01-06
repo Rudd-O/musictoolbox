@@ -109,6 +109,10 @@ def vfatcompare(s: typing.Union[int, float], t: typing.Union[int, float]) -> int
     return 0
 
 
+def default_timestamp_comparator(s: int | float, t: int | float) -> int:
+    return 1 if s > t else (-1 if s < t else 0)
+
+
 class SourceAlwaysNewer(object):
     def compare(self, __arg1: AbsolutePath, __arg2: AbsolutePath) -> int:
         return 1
@@ -119,18 +123,18 @@ class ModTimestampComparer(object):
         self.mptypes = get_mptypes()
 
     def compare(self, path1: AbsolutePath, path2: AbsolutePath) -> int:
-        fstypes = set(get_fstype(p, self.mptypes)[0] for p in [path1, path2])
-        if "vfat" in fstypes:
-            comparator = vfatcompare
-        else:
-            comparator = lambda x, y: (1 if x > y else (-1 if x < y else 0))
-
         try:
             st2 = path2.stat()
         except FileNotFoundError:
             # The target file does not exist, so we always return the
             # source file as newer.
             return 1
+
+        fstypes = set(get_fstype(p, self.mptypes)[0] for p in [path1, path2])
+        if "vfat" in fstypes:
+            comparator = vfatcompare
+        else:
+            comparator = default_timestamp_comparator
         st1 = path1.stat()
 
         try:
