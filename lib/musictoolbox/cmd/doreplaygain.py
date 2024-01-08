@@ -167,18 +167,64 @@ def main() -> None:
             for batch in batches:
                 process = False
                 noalbum = not album or len(batch) < 2
+                need_trackgain = [x for x in batch if tags[x].trackgain is None]
+                __ = {}
                 if noalbum:
                     # If the file in the batch and has RG, ignore the batch
                     # unless explicitly instructed not to.
-                    if args.force or any(tags[x].trackgain is None for x in batch):
+                    if need_trackgain or args.force:
+                        _LOGGER.info(
+                            "Processing %s files — %s%s",
+                            len(batch),
+                            "one or more need track gain"
+                            if need_trackgain
+                            else "forced"
+                            if args.force
+                            else "?",
+                            " (dry-run)" if args.dry_run else "",
+                        )
+                        for f in need_trackgain:
+                            _LOGGER.debug("* Track gain missing: %s", f)
+                            __[f] = True
+                        for f in [x for x in batch if x not in __]:
+                            _LOGGER.debug("* Other in batch:     %s", f)
                         process = True
                 else:
+                    need_albumgain = [x for x in batch if tags[x].albumgain is None]
                     # If all of the files file in the batch have equal album RG
                     # ignore the batch unless explicitly instructed not to.
-                    if args.force or any(
+                    mismatched_albumgains = any(
                         z != w
                         for z, w in itertools.pairwise(tags[x].albumgain for x in batch)
+                    )
+                    if (
+                        mismatched_albumgains
+                        or need_albumgain
+                        or need_trackgain
+                        or args.force
                     ):
+                        _LOGGER.info(
+                            "Processing %s files — %s%s",
+                            len(batch),
+                            "mismatch in album gain"
+                            if mismatched_albumgains
+                            else "one or more need album gain"
+                            if need_albumgain
+                            else "one or more need track gain"
+                            if need_trackgain
+                            else "forced"
+                            if args.force
+                            else "?",
+                            " (dry-run)" if args.dry_run else "",
+                        )
+                        for f in need_albumgain:
+                            _LOGGER.debug("* Album gain missing: %s", f)
+                            __[f] = True
+                        for f in [x for x in need_trackgain if x not in __]:
+                            _LOGGER.debug("* Track gain missing: %s", f)
+                            __[f] = True
+                        for f in [x for x in batch if x not in __]:
+                            _LOGGER.debug("* Other in batch:     %s", f)
                         process = True
                 if not process:
                     continue
