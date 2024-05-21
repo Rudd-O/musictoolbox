@@ -125,7 +125,7 @@ def main() -> None:
             filename_basedir_to_fullpath,
             filename_tokenized_to_fullpath,
             filename_basedir_tokenized_to_fullpath,
-        ) = scan(os.path.abspath(sys.argv[1]))
+        ) = scan(os.path.realpath(sys.argv[1]))
     except IndexError:
         assert 0, (
             "error: the first path to this program must be the root"
@@ -137,12 +137,12 @@ def main() -> None:
         didchange = False
 
         f = open(fn, "r")
-        d = os.path.dirname(fn)
+        d = os.path.dirname(os.path.realpath(fn))
         lines = [x.strip() for x in f.readlines() if x.strip()]
 
         newlines = []
         for line in lines:
-            fullpath = os.path.join(d, line)
+            fullpath = os.path.abspath(os.path.join(d, line))
             if line.startswith("#"):
                 newlines.append(line)
             elif not os.path.exists(fullpath):
@@ -152,7 +152,7 @@ def main() -> None:
                 else:
                     print("%r does not exist, searching for alternatives" % line)
                     choices = find_choices(
-                        line,
+                        fullpath,
                         filename_to_fullpath,
                         filename_basedir_to_fullpath,
                         filename_tokenized_to_fullpath,
@@ -191,11 +191,9 @@ def main() -> None:
                 newlines.append(line)
 
         if didchange:
-            f = open(fn + ".new", "w")
+            f = open(fn, "w")
             f.write("\n".join(newlines))
             f.flush()
             f.close()
-            os.rename(fn, fn + "~")
-            os.rename(fn + ".new", fn)
 
     sys.exit(0)
