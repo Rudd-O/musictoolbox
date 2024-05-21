@@ -59,9 +59,11 @@ def find_choices(
         os.path.basename(os.path.dirname(nonexistent_path)), name_without_ext
     )
     exact_filename_matches = filename_to_fullpath.get(name_without_ext, [])
-    exact_filename_basedir_matches = filename_basedir_to_fullpath.get(
-        name_without_ext, []
-    )
+    exact_filename_basedir_matches = [
+        f
+        for f in filename_basedir_to_fullpath.get(name_without_ext, [])
+        if f not in exact_filename_matches
+    ]
 
     # assert 0, exact_filename_matches + exact_filename_basedir_matches
 
@@ -83,6 +85,7 @@ def find_choices(
             )
         )
         for p in paths
+        if p not in exact_filename_matches and p not in exact_filename_basedir_matches
     ][:10]
 
     name_tokenized = TOKENIZER.sub(" ", name_without_ext).lower()
@@ -98,7 +101,9 @@ def find_choices(
             )
         )
         for p in paths
-        if p not in fuzzy_filename_basedir_matches
+        if p not in exact_filename_matches
+        and p not in exact_filename_basedir_matches
+        and p not in fuzzy_filename_basedir_matches
     ][:10]
 
     return (
