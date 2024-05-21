@@ -25,7 +25,7 @@ def scan(
     for base, dirs, files in os.walk(tree_path):
         for fn in files:
             name_without_ext, ext = os.path.splitext(fn)
-            if ext in [".mood"]:
+            if ext in [".mood", ".nfo"]:
                 continue
             fullpath = os.path.join(base, fn)
             filename_to_fullpath[name_without_ext].append(fullpath)
@@ -174,7 +174,9 @@ def main() -> None:
                     except Exception:
                         pass
 
-                    newline = os.path.relpath(newline, d)
+                    if os.path.abspath(newline) == newline:
+                        newline = os.path.relpath(newline, d)
+
                     print(f"Replacement selected: {newline}")
                     replacements[fullpath] = newline
                     newlines.append(newline)
