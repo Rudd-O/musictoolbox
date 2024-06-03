@@ -168,14 +168,22 @@ def main() -> None:
                             and popular_artists[0][1] == popular_artists[1][1]
                         ):
                             va_text = None
-                    if va_text is None:
-                        dumpfiles("Cannot determine album artist, skipping these files")
-                        continue
+                        if va_text is None:
+                            dumpfiles(
+                                "Cannot determine album artist, skipping these files"
+                            )
+                            continue
+
+                    else:
+                        popular_artists = None
 
                     if args.fix:
-                        print(
-                            f"    Adding album artist {va_text} among {popular_artists}"
-                        )
+                        if popular_artists is None:
+                            print(f"    Adding album artist {va_text} per user request")
+                        else:
+                            print(
+                                f"    Adding album artist {va_text} among {popular_artists}"
+                            )
                         for f in files_to_fix:
                             savetag = File(f, easy=True)
                             savetag[KEY_ALBUMARTIST] = [va_text]
