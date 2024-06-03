@@ -192,10 +192,13 @@ def main() -> None:
                         dumpfiles("Files fixed")
                     else:
                         dumpfiles("Files to fix")
-                        print(
-                            f"    Would add the album artist {va_text}"
-                            f" among {popular_artists}"
-                        )
+                        if popular_artists is None:
+                            print(f"    Adding album artist {va_text} per user request")
+                        else:
+                            print(
+                                f"    Would add the album artist {va_text}"
+                                f" among {popular_artists}"
+                            )
 
     sys.exit(0)
 
