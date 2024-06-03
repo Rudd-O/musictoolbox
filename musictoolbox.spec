@@ -7,7 +7,7 @@
 %define mybuildnumber %{?build_number}%{?!build_number:1}
 
 Name:           python-%{_name}
-Version:        0.0.84
+Version:        0.0.85
 Release:        %{mybuildnumber}%{?dist}
 Summary:        Utilities to help you groom your music collection
 
