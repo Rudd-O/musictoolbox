@@ -8,6 +8,8 @@ import pkg_resources  # type: ignore
 
 import networkx as nx
 
+import pprint
+
 from .interfaces import (
     FileType,
     TranscoderName,
@@ -17,7 +19,7 @@ from .interfaces import (
 from .settings import TranscoderSettings
 
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 class TranscodingStep(object):
@@ -83,7 +85,6 @@ class TranscodingPathLookupProtocol(Protocol):
 
 
 class TranscoderRegistry(object):
-
     loaded_entry_points = False
     transcoder_factories: Set[Type[TranscoderProtocol]] = set()
     transcoders: Dict[TranscoderName, TranscoderProtocol] = {}
@@ -98,7 +99,7 @@ class TranscoderRegistry(object):
                     self.__class__.transcoder_factories.add(factory)
                     self.transcoder_factories.add(factory)
                 except pkg_resources.DistributionNotFound as e:
-                    logger.debug(
+                    _LOGGER.debug(
                         "Loading entry point %s has failed with exception %s", ep, e
                     )
                     continue
@@ -111,7 +112,7 @@ class TranscoderRegistry(object):
             name = TranscoderName(factory.__name__.lower())
             settings = self.transcoder_settings.for_name(name)
             all_setting_names -= set([name])
-            logger.debug(
+            _LOGGER.debug(
                 "Initializing transcoder %s%s",
                 name,
                 (
@@ -129,31 +130,40 @@ class TranscoderRegistry(object):
             )
 
     def map_pipelines(self, src: Path) -> Tuple[nx.MultiDiGraph, List[TranscodingPath]]:
+        logger = _LOGGER.getChild("map_pipelines")
         srctype = FileType.by_name(FileType.from_path(src))
+        logger.debug("source type %s" % srctype)
         org_srctype = srctype
         g = nx.MultiDiGraph()
 
         t2name = dict([(t, tname) for tname, t in self.transcoders.items()])
+        logger.debug("transcoder to name:\n%s" % pprint.pformat(t2name))
 
         types_explored: Dict[FileType, bool] = collections.defaultdict(bool)
         if srctype not in types_explored:
             types_explored[srctype] = False
+
+        logger.debug("types explored status:\n%s" % pprint.pformat(types_explored))
         while any(not f for f in types_explored.values()):
             srctype = [x for x, y in types_explored.items() if not y][0]
+            logger.debug("  exploring %s", srctype)
             g.add_node(srctype)
             for tname, t in self.transcoders.items():
                 p = Path(os.path.join(src.parent, src.stem + "." + srctype))
                 dsttypes = t.can_transcode(p)
                 for d in dsttypes:
+                    logger.debug("    %s can transcode to %s", t, d)
                     g.add_node(d)
                     g.add_edge(srctype, d, key=t, label=tname)
                     if d not in types_explored:
                         types_explored[d] = False
             types_explored[srctype] = True
 
-        paths = []
+        type TStep = Tuple[FileType, FileType, TranscoderProtocol]
+        type TPath = List[TStep]
+        paths: List[TPath] = []
         copytranscoder = self.transcoders[TranscoderName("copy")]
-        copypath: List[Tuple[FileType, FileType, TranscoderProtocol]] = [
+        copypath: TPath = [
             (
                 org_srctype,
                 org_srctype,
@@ -162,12 +172,20 @@ class TranscoderRegistry(object):
         ]
         paths.append(copypath)
         for tt in types_explored.keys():
-            paths += list(nx.all_simple_edge_paths(g, org_srctype, tt))
+            res = list(nx.all_simple_edge_paths(g, org_srctype, tt))
+            logger.debug("  retrieved paths for type %s:", tt)
+            for i, pp in enumerate(res):
+                if pp != []:
+                    logger.debug("  %s. %s", i + 1, pp)
+                    paths.append(pp)
+                else:
+                    logger.debug("  %s. empty path (ignored)", i + 1)
 
         new_paths: List[
             Tuple[int, List[Tuple[FileType, FileType, TranscoderName]]]
         ] = []
         for path in paths:
+            logger.debug("  evaluating path %s", path)
             length = len(path)
             cost = 0
             new_path = []
@@ -182,7 +200,12 @@ class TranscoderRegistry(object):
                 cost += transcoder.cost
                 new_path.append((s, dest, t2name[transcoder]))
             if append:
+                logger.debug(
+                    "  appending path %s with cost %s: %s", path, cost, new_path
+                )
                 new_paths.append((cost, new_path))
+            else:
+                logger.debug("  not appending path %s with cost %s", path, cost)
 
         final_paths = [
             TranscodingPath(cost, self, path) for cost, path in list(sorted(new_paths))
@@ -190,9 +213,7 @@ class TranscoderRegistry(object):
         return g, final_paths
 
     @classmethod
-    def register(
-        cls, transcoder_factory
-    ):  # type: (Type[TranscoderRegistry], Type[TranscoderProtocol]) -> Type[TranscoderProtocol]
+    def register(cls, transcoder_factory):  # type: (Type[TranscoderRegistry], Type[TranscoderProtocol]) -> Type[TranscoderProtocol]
         cls.transcoder_factories.add(transcoder_factory)
         return transcoder_factory
 

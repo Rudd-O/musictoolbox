@@ -13,10 +13,7 @@ from .. import registry
 from ..interfaces import FileType
 
 
-try:
-    from shlex import quote
-except ImportError:
-    from pipes import quote
+from shlex import quote
 
 try:
     from urllib.request import pathname2url
@@ -59,7 +56,7 @@ def gst(
     src: Path,
     dst: Path,
     *elements: Union[str, List[str]],
-    force_gst_command: Optional[str] = None
+    force_gst_command: Optional[str] = None,
 ) -> List[str]:
     if force_gst_command:
         prog = force_gst_command

@@ -144,13 +144,13 @@ class OnDiskMetadataCache(typing.Generic[D]):
         """
         self.__cache_version = cache_version
         self.__cache_factory = cache_factory
-        self.__f: io.BufferedReader | None = None
+        self.__f: io.BufferedRandom | None = None
         self.__metadata: D = None  # type: ignore
         p = xdg.BaseDirectory.save_cache_path("musictoolbox")
         self.__path = os.path.join(p, cache_name.replace(os.path.sep, "_"))
 
     def __enter__(self) -> D:
-        f: io.BufferedReader | None = None
+        f: io.BufferedRandom
 
         metadata = self.__cache_factory()
         fsize = 0
@@ -185,7 +185,6 @@ class OnDiskMetadataCache(typing.Generic[D]):
         return metadata
 
     def __exit__(self, *unused_args: typing.Any, **unused_kw: typing.Any) -> None:
-
         if self.__f and self.__metadata.is_dirty():
             try:
                 self.__metadata.mark_clean()

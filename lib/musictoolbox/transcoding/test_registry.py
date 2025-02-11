@@ -21,7 +21,8 @@ class DummyTranscoder(NoSettings):
 
 class DummyLookup(object):
     def get_transcoder(
-        self, transcoder_name: TranscoderName  # @UnusedVariable
+        self,
+        transcoder_name: TranscoderName,  # @UnusedVariable
     ) -> TranscoderProtocol:
         return DummyTranscoder({})
 
