@@ -286,29 +286,33 @@ class Synchronizer(object):
                 with p.open("r") as pf:
                     pfl = pf.readlines()
                 newpfl = []
-                newpfl.append("# from: %s\n" % oldp)
-                for l in pfl:
-                    if l.startswith("#") or not l.strip():
-                        newpfl.append(l)
+                for ln in pfl:
+                    if ln.startswith("#") or not ln.strip():
+                        newpfl.append(ln)
                         continue
-                    cr = l.endswith("\n")
-                    orgl = "# was: " + l.strip() + "\n"
+                    cr = ln.endswith("\n")
+                    orgl = "# was: " + ln.strip() + "\n"
                     newpfl.append(orgl)
-                    l = l.strip()
-                    truel = Absolutize(os.path.join(pdir, l))
+                    ln = ln.strip()
+                    truel = Absolutize(os.path.join(pdir, ln))
                     if truel in will_sync:
-                        l = will_sync[truel].as_posix()
-                        l = os.path.relpath(l, self.target_playlist_dir.as_posix())
+                        ln = will_sync[truel].as_posix()
+                        ln = os.path.relpath(ln, self.target_playlist_dir.as_posix())
                     elif truel in already_synced:
-                        l = already_synced[truel].as_posix()
-                        l = os.path.relpath(l, self.target_playlist_dir.as_posix())
+                        ln = already_synced[truel].as_posix()
+                        ln = os.path.relpath(ln, self.target_playlist_dir.as_posix())
                     elif truel in wont_sync:
-                        l = "# not synced because of %s" % wont_sync[truel]
+                        ln = "# not synced because of %s" % wont_sync[truel]
                     else:
-                        assert 0, (l, truel)
+                        assert 0, (ln, truel)
                     if cr:
-                        l += "\n"
-                    newpfl.append(l)
+                        ln += "\n"
+                    newpfl.append(ln)
+                # Insert provenance comment.
+                newpfl.insert(
+                    1 if (newpfl and newpfl[0].startswith("#EXTM3U")) else 0,
+                    "# from: %s\n" % oldp,
+                )
                 sync = True
                 try:
                     with newp.open("r") as oldpfl:
