@@ -5,7 +5,9 @@ from threading import Thread
 import typing
 
 import concurrent.futures as fut
-import signal as _  # @UnusedImport
+
+# FIXME: does this belong here?  Why not on the main()?
+import signal as _unused_signal  # noqa
 
 from . import algo
 from .. import files
