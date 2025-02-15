@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Tuple, Set, Type, Protocol, Any
 
-import pkg_resources  # type: ignore
+from importlib import metadata
 
 import networkx as nx
 
@@ -91,15 +91,16 @@ class TranscoderRegistry(object):
 
     def __init__(self, transcoder_settings: TranscoderSettings):
         if not self.__class__.loaded_entry_points:
-            for ep in pkg_resources.iter_entry_points(
-                group="musictoolbox.transcoding.codecs"
-            ):
+            eps = metadata.entry_points()
+            codecs = eps.select(group="musictoolbox.transcoding.codecs")
+            for ep in codecs:
                 try:
                     factory = ep.load()
+                    assert 0, factory
                     self.__class__.transcoder_factories.add(factory)
                     self.transcoder_factories.add(factory)
-                except pkg_resources.DistributionNotFound as e:
-                    _LOGGER.debug(
+                except Exception as e:
+                    _LOGGER.warning(
                         "Loading entry point %s has failed with exception %s", ep, e
                     )
                     continue
