@@ -96,7 +96,6 @@ class TranscoderRegistry(object):
             for ep in codecs:
                 try:
                     factory = ep.load()
-                    assert 0, factory
                     self.__class__.transcoder_factories.add(factory)
                     self.transcoder_factories.add(factory)
                 except Exception as e:
