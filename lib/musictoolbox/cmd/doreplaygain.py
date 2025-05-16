@@ -12,8 +12,8 @@ from musictoolbox.cache import FileMetadataCache, OnDiskMetadataCache
 from musictoolbox.files import all_files
 from musictoolbox.logging import basicConfig
 from mutagen._file import File
-from rgain3.albumid import get_album_id
-from rgain3 import rgio, GainData
+from rgain3.lib.albumid import get_album_id # type: ignore
+from rgain3.lib import rgio, GainData # type: ignore
 
 
 _LOGGER = logging.getLogger(__name__)
