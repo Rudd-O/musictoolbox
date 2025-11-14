@@ -79,7 +79,11 @@ def gst(
         prog = _gst_command
 
     cmd = [prog, "-f"]
-    srcs = "file://" + pathname2url(src.absolute().as_posix())
+    srcs = pathname2url(src.absolute().as_posix())
+    if not srcs.startswith("file://"):
+        # F42 / Python 3.13+ pathname2url sometimes returns file:// added to the path.
+        # Older versions of Python do not.
+        srcs = "file://" + srcs
     cmd += ["giosrc", "location=%s" % srcs]
     for element in elements:
         cmd.append("!")
