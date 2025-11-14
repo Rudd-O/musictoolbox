@@ -79,7 +79,12 @@ def gst(
         prog = _gst_command
 
     cmd = [prog, "-f"]
-    srcs = pathname2url(src.absolute().as_posix())
+    srcs = src.absolute().as_posix()
+    while srcs.startswith("//"):
+        srcs = srcs[1:]
+    srcs = pathname2url(srcs)
+    while srcs.startswith("//"):
+        srcs = srcs[1:]
     if not srcs.startswith("file://"):
         # F42 / Python 3.13+ pathname2url sometimes returns file:// added to the path.
         # Older versions of Python do not.
